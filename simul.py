@@ -15,10 +15,13 @@ logger.add(
     sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
 )
 
-def generate_reads(fasta_file, read_length=200, coverage=3):
+def read_fasta(fasta_file):
     with open(fasta_file, "r") as f:
         lines = f.readlines()
     sequence = np.array(list("".join(line.strip() for line in lines[1:])))  # retrieve the whole genomic sequence from FASTA
+    return sequence
+
+def generate_reads(sequence, read_length=200, coverage=3):
     size = len(sequence)
     reads = []
     coverage_array = np.zeros_like(list(sequence), dtype=int)
@@ -72,16 +75,23 @@ def visualize_Nx_stat(contig_array, total_genome_length):
     plt.title("Nx Plot") 
     plt.show()
 
+def generate_contigs(graph):
+    """
+    Generate contigs from de bruijn graph
+    """
+    pass
+
 if __name__ == '__main__':
     fasta_file = "genomic.fna"
-    reads, coverage_array = generate_reads(fasta_file)
-    genome_length = len(reads[0]) * len(reads)  # Adjust if needed
-    dbgraphs = []
-    # visualize_coverage(coverage_array)
+    sequence = read_fasta(fasta_file)
+    total_genome_length = len(sequence)
+    # simulate reads of coverage 3x
+    reads, coverage_array = generate_reads(sequence=sequence)
+    visualize_coverage(coverage_array)
+    # initialize the de bruijn graph
     de_bruijn = db.create(reads=reads, k=20)
-    logger.info("Plotting the resulted graph")
-    nx.draw(de_bruijn)
     # compressed_de_bruijn = db.compress(de_bruijn, k=20)
-    # logger.info(f"Merging de bruijn graphs. {de_bruijn}")
-    # print(db.compress_debruijn_graph(de_bruijn))
-    # visualize_coverage(reads, genome_length)
+    logger.info("Generating contigs from the de Bruijn graph")
+    contig_array = generate_contigs(de_bruijn)
+    logger.info("Computing Nx statistics")
+    visualize_Nx_stat(contig_array, total_genome_length)
