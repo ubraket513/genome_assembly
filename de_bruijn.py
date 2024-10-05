@@ -1,5 +1,15 @@
 from collections import defaultdict
 import numpy as np
+import warnings, sys
+from loguru import logger
+
+warnings.filterwarnings("ignore")
+
+# configure Loguru logger
+logger.remove()
+logger.add(
+    sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} - {level} - {message}", level="INFO"
+)
 
 def get_kmers(read:str, k:int):
   """
@@ -44,7 +54,7 @@ def create(read:str, k: int):
     graph[prefix].add(suffix)  # add an edge between two candidate nodes
 
   graph = {k: list(v) for k, v in graph.items()}
-  print("created a de bruijn graph.")
+  logger.info("created a de bruijn graph.")
   return graph
 
 
