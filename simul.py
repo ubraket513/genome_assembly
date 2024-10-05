@@ -3,6 +3,7 @@ import numpy as np
 import de_bruijn as db
 import random as rd
 import multiprocessing as mp
+import networkx as nx
 import warnings, sys
 from loguru import logger
 
@@ -17,7 +18,7 @@ logger.add(
 def generate_reads(fasta_file, read_length=200, coverage=3):
     with open(fasta_file, "r") as f:
         lines = f.readlines()
-    sequence = "".join(line.strip() for line in lines[1:])  # retrieve the whole genomic sequence from FASTA
+    sequence = np.array(list("".join(line.strip() for line in lines[1:])))  # retrieve the whole genomic sequence from FASTA
     size = len(sequence)
     reads = []
     coverage_array = np.zeros_like(list(sequence), dtype=int)
@@ -40,29 +41,47 @@ def generate_reads(fasta_file, read_length=200, coverage=3):
     return reads, coverage_array
 
 def visualize_coverage(coverage_array):
-    plt.plot(coverage_array)
+    plt.plot(coverage_array, 'go', markersize=3)  # Plot as green dots
     plt.xlabel("Position in the Genome")
     plt.ylabel("Coverage")
     plt.title("Coverage Plot of NCBI COVID-19")
+    plt.axhline(y=3, color='r', linestyle='-')  # Add red horizontal line at y=3
     plt.show()
 
+def generate_Nx_stat(contig_array, total_genome_length: int, x):
+    """
+    Construct a Nx-statistics of the contig array with the value x specified
+    """
+    contig_len_array = sorted([len(contig) for contig in contig_array], reverse=True)
+    nX = 0
+    index = 0
+    while (nX < total_genome_length * x / 100) and (index < len(contig_len_array)):
+        nX += contig_len_array[index]
+        index += 1
+    return nX
+
+def visualize_Nx_stat(contig_array, total_genome_length):
+    """
+    Visualize the Nx statistics for x=[1,...,100]
+    """
+    x_lst = np.linspace(1, 100, endpoint=True)
+    Nx_stat = [generate_Nx_stat(contig_array, total_genome_length, x) for x in x_lst]
+    plt.plot(x_lst, Nx_stat, 'ro-', markersize=3)
+    plt.xlabel("Value of x")
+    plt.ylabel("Nx Statistics")
+    plt.title("Nx Plot") 
+    plt.show()
 
 if __name__ == '__main__':
     fasta_file = "genomic.fna"
     reads, coverage_array = generate_reads(fasta_file)
     genome_length = len(reads[0]) * len(reads)  # Adjust if needed
     dbgraphs = []
-    visualize_coverage(coverage_array)
-    
-    def func(read):
-        return db.create(read=read, k=20)
-    
-    with mp.Pool(processes=150) as pool:
-        results = pool.map_async(func, reads)  # Use map_async
-        # Wait for the processes to finish
-        results.wait()
-        dbgraphs = results.get()  # Get the actual results
-    de_bruijn = db.merge(dbgraphs)
-    logger.info(f"Merging de bruijn graphs. {de_bruijn}")
+    # visualize_coverage(coverage_array)
+    de_bruijn = db.create(reads=reads, k=20)
+    logger.info("Plotting the resulted graph")
+    nx.draw(de_bruijn)
+    # compressed_de_bruijn = db.compress(de_bruijn, k=20)
+    # logger.info(f"Merging de bruijn graphs. {de_bruijn}")
     # print(db.compress_debruijn_graph(de_bruijn))
     # visualize_coverage(reads, genome_length)
