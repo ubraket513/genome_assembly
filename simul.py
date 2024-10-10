@@ -21,7 +21,7 @@ def read_fasta(fasta_file):
     sequence = np.array(list("".join(line.strip() for line in lines[1:])))  # retrieve the whole genomic sequence from FASTA
     return sequence
 
-def generate_reads(sequence, read_length=200, coverage=3):
+def generate_reads(sequence, read_length=200, coverage=2):
     size = len(sequence)
     reads = []
     coverage_array = np.zeros_like(list(sequence), dtype=int)
@@ -77,9 +77,10 @@ def visualize_Nx_stat(contig_array, total_genome_length):
 
 def generate_contigs(graph):
     """
-    Generate contigs from de bruijn graph
+    Generate contigs from de Bruijn graph
     """
-    pass
+    contigs = graph.edges()
+    return contigs
 
 if __name__ == '__main__':
     fasta_file = "genomic.fna"
@@ -90,8 +91,10 @@ if __name__ == '__main__':
     visualize_coverage(coverage_array)
     # initialize the de bruijn graph
     de_bruijn = db.create(reads=reads, k=20)
+    # db.plot(de_bruijn)
     # compressed_de_bruijn = db.compress(de_bruijn, k=20)
     logger.info("Generating contigs from the de Bruijn graph")
     contig_array = generate_contigs(de_bruijn)
+    print(contig_array)
     logger.info("Computing Nx statistics")
     visualize_Nx_stat(contig_array, total_genome_length)
