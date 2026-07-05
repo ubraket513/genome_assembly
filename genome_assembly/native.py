@@ -6,7 +6,7 @@ from importlib import import_module
 from importlib.util import find_spec
 from typing import Iterable
 
-_REQUIRED_SYMBOLS = ("count_kmers", "build_edges")
+_REQUIRED_SYMBOLS = ("count_kmers", "build_edges", "compact_contigs")
 
 
 def native_available() -> bool:
@@ -78,3 +78,19 @@ def build_edges(
         skip_ambiguous,
     )
     return raw_edge_count, edges
+
+
+def compact_contigs(
+    node_k: int,
+    edge_rows: Iterable[tuple[str, str, str, int]],
+    *,
+    min_length: int = 0,
+) -> list[tuple[str, float, int]]:
+    """Compact de Bruijn graph edges into contig rows with the optional Rust extension."""
+
+    if node_k < 1:
+        raise ValueError("node_k must be >= 1")
+    if min_length < 0:
+        raise ValueError("min_length must be >= 0")
+    native = require_native()
+    return native.compact_contigs(node_k, list(edge_rows), min_length)

@@ -1,11 +1,14 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from genome_assembly import AssemblyConfig, assemble_short_reads, n50, nx, simulate_reads
+from genome_assembly.benchmark import parse_backend_list, run_benchmark
 from genome_assembly.io import FastaRecord, FastqRecord, read_fasta, read_fastq, write_fasta, write_fastq
 from genome_assembly.kmers import canonical_kmer, iter_kmers, reverse_complement
 from genome_assembly.metrics import assembly_stats
+from genome_assembly.cython_backend import cython_available, require_cython_backend
 from genome_assembly.native import native_available, require_native
 
 
@@ -71,6 +74,34 @@ class SimulationAndIoTests(unittest.TestCase):
             self.assertEqual(read_fastq(fastq)[0].quality, "IIII")
 
 
+class BenchmarkTests(unittest.TestCase):
+    def test_parse_backend_list(self):
+        self.assertEqual(parse_backend_list("python, cython,native"), ["python", "cython", "native"])
+        with self.assertRaises(ValueError):
+            parse_backend_list(" , ")
+
+    def test_run_python_benchmark(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fasta = Path(tmpdir) / "reference.fasta"
+            write_fasta([FastaRecord("ref", "ACGTACGTACGT")], fasta)
+
+            report = run_benchmark(
+                fasta,
+                backends=["python"],
+                k=3,
+                read_length=4,
+                coverage=2,
+                seed=1,
+            )
+
+        self.assertEqual(report["benchmark"]["reference_name"], "ref")
+        self.assertEqual(report["benchmark"]["read_count"], 6)
+        self.assertEqual(report["runs"][0]["backend"], "python")
+        self.assertEqual(report["runs"][0]["status"], "ok")
+        self.assertIn("wall_time_seconds", report["runs"][0])
+        self.assertIn("stats", report["runs"][0])
+
+
 class NativeBridgeTests(unittest.TestCase):
     def test_native_available_returns_bool(self):
         self.assertIsInstance(native_available(), bool)
@@ -95,6 +126,38 @@ class NativeBridgeTests(unittest.TestCase):
         self.assertEqual(
             [contig.sequence for contig in python_result.contigs],
             [contig.sequence for contig in native_result.contigs],
+        )
+
+
+class CythonBridgeTests(unittest.TestCase):
+    def test_cython_available_returns_bool(self):
+        self.assertIsInstance(cython_available(), bool)
+
+    def test_missing_cython_extension_has_actionable_error(self):
+        if cython_available():
+            self.assertIsNotNone(require_cython_backend())
+            return
+
+        with self.assertRaisesRegex(RuntimeError, "build_ext --inplace"):
+            require_cython_backend()
+
+    def test_cython_import_failure_has_actionable_error(self):
+        with patch("genome_assembly.cython_backend.import_module", side_effect=ImportError):
+            with self.assertRaisesRegex(RuntimeError, "build_ext --inplace"):
+                require_cython_backend()
+
+    def test_cython_backend_matches_python_when_available(self):
+        if not cython_available():
+            self.skipTest("Cython extension is not built")
+
+        reads = ["ACGTTA", "GTTACC"]
+        python_result = assemble_short_reads(reads, AssemblyConfig(k=3, backend="python"))
+        cython_result = assemble_short_reads(reads, AssemblyConfig(k=3, backend="cython"))
+
+        self.assertEqual(python_result.summary, cython_result.summary)
+        self.assertEqual(
+            [contig.sequence for contig in python_result.contigs],
+            [contig.sequence for contig in cython_result.contigs],
         )
 
 

@@ -9,9 +9,13 @@ toolkit.
 The intended product shape is:
 
 - Python API and friendly CLI for users, notebooks, reports, and orchestration.
-- Rust native core for k-mer counting, graph construction, compaction, and
-  multicore CPU execution.
-- Optional C++/CUDA backend for GPU-heavy kernels once CPU baselines are proven.
+- Rust native core for production hot paths, multicore CPU work, and future HPC
+  kernels.
+- Cython accelerator for tactical CPython hot paths and rapid native prototypes.
+- PyPy-compatible pure-Python backend where practical, without treating PyPy as
+  a compiled-backend target.
+- Optional C++/CUDA lane for existing C++ libraries, SIMD-heavy code, or
+  GPU-heavy kernels once Python, Cython, and Rust baselines are proven.
 - Interoperability with FASTA, FASTQ, GFA, QUAST, and established assemblers.
 
 ## Current State
@@ -26,16 +30,28 @@ Completed:
 - Assembly metrics including `N50/N90` and reference-aware `NG50/NG90`.
 - Typer CLI: `simulate`, `assemble`, and `stats`.
 - Initial tests and CLI smoke flow.
-- ADR selecting Rust as the first native core.
-- Rust/PyO3 native scaffold for k-mer counting and edge-table construction.
+- Rust/PyO3 native backend for k-mer counting, edge-table construction, and
+  contig compaction.
 - Optional native backend bridge with Python parity tests.
+- Historical ADR-002 for the Cython/PyPy lane.
+- ADR-003 selecting Rust as the primary production native core while keeping
+  Cython and C++ as scoped lanes.
+- Cython backend for k-mer counting, graph edge-table construction, and contig
+  compaction.
+- CLI `--backend` selection for `python`, `cython`, and `native`.
+- CLI `benchmark` command for reproducible backend comparisons on simulated
+  reads.
 
 Known boundaries:
 
 - The current assembler is correctness-first and not yet optimized for large
   genomes.
-- The native backend is scaffolded incrementally and should remain optional
-  until parity and packaging are mature.
+- Rust is the preferred production native core; Cython remains a tactical
+  CPython accelerator.
+- C++ is not a default core. Use it only for benchmark-justified specialist
+  kernels or external C++/CUDA integrations.
+- PyPy has not been validated locally yet and should run only the pure-Python
+  backend.
 - Graph cleaning, paired-end logic, minimizer partitioning, and GPU kernels are
   not yet implemented.
 
@@ -45,52 +61,47 @@ Known boundaries:
 
 Status: complete.
 
-Keep the Python implementation as the correctness oracle. Every native kernel
-must match this behavior before replacing it.
+Keep the Python implementation as the correctness oracle. Every accelerator must
+match this behavior before replacing it.
 
-### M1: Native Backend Scaffold
+Success criteria:
+
+- Python tests pass with no compiled extensions installed.
+- API behavior stays stable for `backend="python"`.
+
+### M1: Cython CPython Accelerator
 
 Status: complete.
 
-Add a standalone Rust/PyO3 crate exposing deterministic k-mer counting. Wire the
-Python `backend="native"` setting to use native k-mer counts when the extension
-is installed, while preserving the default pure-Python install.
+Use Cython for k-mer counting, graph edge-table construction, and contig
+compaction while preserving the public Python API.
+
+Success criteria:
+
+- Python tests pass without the Cython extension installed.
+- Cython parity tests pass when the extension is built.
+- CLI supports `--backend cython`.
+- Missing Cython extension produces a clear actionable error.
+
+### M2: Rust Native Core
+
+Status: complete for k-mer counting, edge-table construction, and contig
+compaction.
+
+Move graph hot paths into Rust while preserving Python API behavior.
 
 Success criteria:
 
 - `cargo test` passes for the Rust crate.
-- Python tests pass with no native extension installed.
-- A missing native extension produces a clear actionable error.
-- API behavior stays stable for `backend="python"`.
-
-### M2: Native Graph Construction
-
-Status: complete for edge-table construction; compaction remains Python.
-
-Move graph edge creation into Rust and return a compact, deterministic edge
-table to Python.
-
-Success criteria:
-
 - Native and Python graph summaries match on synthetic fixtures.
-- Native edge counting is measurably faster on SARS-CoV-2 and bacterial-scale
-  synthetic reads.
+- Native and Python contig sequences match on small fixtures.
+- Native backend is ready for SARS-CoV-2 and bacterial-scale benchmark
+  comparison.
 - The Python graph API remains unchanged.
 
-### M3: Native Contig Compaction
+### M3: Benchmark Harness
 
-Status: next.
-
-Move maximal non-branching path compaction into Rust.
-
-Success criteria:
-
-- Contig sequences match Python behavior on linear, branching, circular, tip,
-  and bubble fixtures.
-- Native assembly produces the same FASTA/GFA outputs modulo ordering rules
-  documented in tests.
-
-### M4: Benchmark Harness
+Status: complete for deterministic simulated-read benchmarks.
 
 Add reproducible benchmark commands and fixture tiers.
 
@@ -104,14 +115,18 @@ Benchmark tiers:
 Metrics:
 
 - Wall time.
-- Peak memory.
+- Peak traced Python memory initially; process RSS should be added for native
+  memory accounting later.
 - Threads used.
 - Contig count, total bp, N50, NG50, GC percent.
 
-### M5: Multicore CPU/HPC
+### M4: Multicore CPU/HPC
+
+Status: next.
 
 Introduce parallel Rust execution with chunked I/O, minimizer partitioning, and
-thread-aware memory controls.
+thread-aware memory controls. Keep Cython single-process unless profiling shows
+clear value.
 
 Success criteria:
 
@@ -119,7 +134,36 @@ Success criteria:
 - Deterministic output across thread counts.
 - Benchmark report shows speedup and memory behavior.
 
-### M6: Assembly Quality Features
+### M5: PyPy Compatibility Lane
+
+Status: optional after benchmark harness.
+
+Validate the pure-Python backend under PyPy and document unsupported paths.
+
+Success criteria:
+
+- PyPy can run core tests for `backend="python"`.
+- Docs state that Cython/Rust extension backends are CPython-oriented.
+- Any PyPy-specific test exclusions are explicit.
+
+### M6: C++/CUDA Evaluation Lane
+
+Status: gated by benchmarks.
+
+Evaluate C++ only when it solves a specific problem better than Rust or Cython.
+
+Entry criteria:
+
+- Existing C++ bioinformatics library needs binding.
+- CUDA/SIMD kernel is clearly better served by C++ tooling.
+- Benchmark harness shows a bottleneck Rust/Cython cannot meet.
+
+Success criteria:
+
+- A pybind11 or CMake-backed spike has isolated scope and parity tests.
+- The decision to keep or drop C++ is documented with benchmark data.
+
+### M7: Assembly Quality Features
 
 Add graph cleaning and better short-read assembly behavior.
 
@@ -131,7 +175,7 @@ Feature order:
 - Multi-k assembly exploration.
 - Paired-end design hooks.
 
-### M7: GPU Exploration
+### M8: GPU Exploration
 
 Prototype GPU only where it is likely to pay off.
 
@@ -145,7 +189,7 @@ Candidate kernels:
 Avoid moving irregular graph traversal to GPU until profiling proves it is worth
 the complexity.
 
-### M8: Distribution and Integration
+### M9: Distribution and Integration
 
 Prepare release-quality packaging.
 

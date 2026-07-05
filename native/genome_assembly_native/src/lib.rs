@@ -1,6 +1,6 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn normalize_sequence(sequence: &str) -> Vec<u8> {
     sequence
@@ -47,6 +47,7 @@ pub fn count_kmers_impl(
 }
 
 pub type EdgeRow = (String, String, String, usize);
+pub type ContigRow = (String, f64, usize);
 
 pub fn build_edges_impl(
     reads: &[String],
@@ -78,6 +79,139 @@ pub fn build_edges_impl(
     Ok((raw_edge_count, edges))
 }
 
+fn edge_key(edge: &EdgeRow) -> (String, String) {
+    (edge.0.clone(), edge.1.clone())
+}
+
+fn is_one_in_one_out(
+    node: &str,
+    in_edges: &BTreeMap<String, Vec<EdgeRow>>,
+    out_edges: &BTreeMap<String, Vec<EdgeRow>>,
+) -> bool {
+    in_edges.get(node).map_or(0, Vec::len) == 1 && out_edges.get(node).map_or(0, Vec::len) == 1
+}
+
+fn walk_contig(
+    start_edge: EdgeRow,
+    in_edges: &BTreeMap<String, Vec<EdgeRow>>,
+    out_edges: &BTreeMap<String, Vec<EdgeRow>>,
+    visited: &mut BTreeSet<(String, String)>,
+) -> ContigRow {
+    visited.insert(edge_key(&start_edge));
+    let mut sequence = start_edge.2.clone();
+    let mut count_sum = start_edge.3;
+    let mut current = start_edge.1.clone();
+    let mut edge_count = 1;
+
+    while is_one_in_one_out(&current, in_edges, out_edges) {
+        let Some(next_edges) = out_edges.get(&current) else {
+            break;
+        };
+        let Some(next_edge) = next_edges.first() else {
+            break;
+        };
+        let key = edge_key(next_edge);
+        if visited.contains(&key) {
+            break;
+        }
+
+        visited.insert(key);
+        if let Some(last_base) = next_edge.2.chars().last() {
+            sequence.push(last_base);
+        }
+        count_sum += next_edge.3;
+        current = next_edge.1.clone();
+        edge_count += 1;
+    }
+
+    (sequence, count_sum as f64 / edge_count as f64, edge_count)
+}
+
+pub fn compact_contigs_impl(
+    node_k: usize,
+    edge_rows: &[EdgeRow],
+    min_length: usize,
+) -> Result<Vec<ContigRow>, String> {
+    if node_k == 0 {
+        return Err("node_k must be >= 1".to_string());
+    }
+
+    let mut out_edges: BTreeMap<String, Vec<EdgeRow>> = BTreeMap::new();
+    let mut in_edges: BTreeMap<String, Vec<EdgeRow>> = BTreeMap::new();
+    let mut nodes: BTreeSet<String> = BTreeSet::new();
+    let mut visited: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut contigs: Vec<(String, String, f64, usize)> = Vec::new();
+    let mut discovery_index = 0usize;
+
+    for edge in edge_rows {
+        out_edges
+            .entry(edge.0.clone())
+            .or_default()
+            .push(edge.clone());
+        in_edges
+            .entry(edge.1.clone())
+            .or_default()
+            .push(edge.clone());
+        nodes.insert(edge.0.clone());
+        nodes.insert(edge.1.clone());
+    }
+
+    for node in &nodes {
+        if is_one_in_one_out(node, &in_edges, &out_edges) {
+            continue;
+        }
+        let Some(edges) = out_edges.get(node) else {
+            continue;
+        };
+        for edge in edges.clone() {
+            if visited.contains(&edge_key(&edge)) {
+                continue;
+            }
+            let (sequence, mean_abundance, edge_count) =
+                walk_contig(edge, &in_edges, &out_edges, &mut visited);
+            if sequence.len() >= min_length {
+                discovery_index += 1;
+                contigs.push((
+                    format!("contig_{discovery_index}"),
+                    sequence,
+                    mean_abundance,
+                    edge_count,
+                ));
+            }
+        }
+    }
+
+    for edge in edge_rows {
+        if visited.contains(&edge_key(edge)) {
+            continue;
+        }
+        let (sequence, mean_abundance, edge_count) =
+            walk_contig(edge.clone(), &in_edges, &out_edges, &mut visited);
+        if sequence.len() >= min_length {
+            discovery_index += 1;
+            contigs.push((
+                format!("contig_{discovery_index}"),
+                sequence,
+                mean_abundance,
+                edge_count,
+            ));
+        }
+    }
+
+    contigs.sort_by(|left, right| {
+        right
+            .1
+            .len()
+            .cmp(&left.1.len())
+            .then_with(|| left.0.cmp(&right.0))
+    });
+
+    Ok(contigs
+        .into_iter()
+        .map(|(_, sequence, mean_abundance, edge_count)| (sequence, mean_abundance, edge_count))
+        .collect())
+}
+
 #[pyfunction]
 #[pyo3(signature = (reads, k, skip_ambiguous = true))]
 fn count_kmers(
@@ -99,10 +233,21 @@ fn build_edges(
     build_edges_impl(&reads, node_k, min_abundance, skip_ambiguous).map_err(PyValueError::new_err)
 }
 
+#[pyfunction]
+#[pyo3(signature = (node_k, edge_rows, min_length = 0))]
+fn compact_contigs(
+    node_k: usize,
+    edge_rows: Vec<EdgeRow>,
+    min_length: usize,
+) -> PyResult<Vec<ContigRow>> {
+    compact_contigs_impl(node_k, &edge_rows, min_length).map_err(PyValueError::new_err)
+}
+
 #[pymodule]
 fn genome_assembly_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(count_kmers, m)?)?;
     m.add_function(wrap_pyfunction!(build_edges, m)?)?;
+    m.add_function(wrap_pyfunction!(compact_contigs, m)?)?;
     Ok(())
 }
 
@@ -193,5 +338,38 @@ mod tests {
         let reads = vec!["ACGT".to_string()];
         let error = build_edges_impl(&reads, 3, 0, true).unwrap_err();
         assert_eq!(error, "min_abundance must be >= 1");
+    }
+
+    #[test]
+    fn compacts_linear_contig() {
+        let reads = vec!["ACGTTA".to_string(), "GTTACC".to_string()];
+        let (_, edges) = build_edges_impl(&reads, 3, 1, true).unwrap();
+        let contigs = compact_contigs_impl(3, &edges, 0).unwrap();
+        assert_eq!(contigs, vec![("ACGTTACC".to_string(), 1.2, 5)]);
+    }
+
+    #[test]
+    fn compacts_circular_contig() {
+        let edges = vec![
+            ("AT".to_string(), "TG".to_string(), "ATG".to_string(), 1),
+            ("TG".to_string(), "GA".to_string(), "TGA".to_string(), 1),
+            ("GA".to_string(), "AT".to_string(), "GAT".to_string(), 1),
+        ];
+        let contigs = compact_contigs_impl(2, &edges, 0).unwrap();
+        assert_eq!(contigs, vec![("ATGAT".to_string(), 1.0, 3)]);
+    }
+
+    #[test]
+    fn filters_short_contigs() {
+        let reads = vec!["ACGTTA".to_string(), "GTTACC".to_string()];
+        let (_, edges) = build_edges_impl(&reads, 3, 1, true).unwrap();
+        let contigs = compact_contigs_impl(3, &edges, 9).unwrap();
+        assert!(contigs.is_empty());
+    }
+
+    #[test]
+    fn rejects_zero_node_k_for_compaction() {
+        let error = compact_contigs_impl(0, &[], 0).unwrap_err();
+        assert_eq!(error, "node_k must be >= 1");
     }
 }

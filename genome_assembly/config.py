@@ -25,5 +25,5 @@ class AssemblyConfig:
             raise ValueError("min_contig_length must be >= 0")
         if self.threads < 1:
             raise ValueError("threads must be >= 1")
-        if self.backend not in {"python", "native"}:
-            raise ValueError("backend must be 'python' or 'native'")
+        if self.backend not in {"python", "cython", "native"}:
+            raise ValueError("backend must be 'python', 'cython', or 'native'")

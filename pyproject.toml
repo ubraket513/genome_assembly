@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "A production-oriented genome assembly library and CLI with a path to native acceleration."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
   { name = "Genome Assembly Contributors" }
 ]
@@ -19,6 +19,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+]
+perf = [
+  "cython>=3.0",
+  "setuptools>=69",
+]
+native = [
+  "maturin>=1.0,<2.0",
 ]
 
 [project.scripts]

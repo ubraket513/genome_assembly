@@ -1,7 +1,9 @@
 """Production-oriented genome assembly library."""
 
 from .assemble import AssemblyResult, assemble_short_reads
+from .benchmark import run_benchmark
 from .config import AssemblyConfig
+from .cython_backend import cython_available
 from .graph import Contig, DeBruijnGraph, GraphSummary
 from .io import FastaRecord, FastqRecord, read_fasta, read_fastq, write_fasta, write_fastq
 from .metrics import assembly_stats, n50, nx
@@ -14,6 +16,7 @@ __all__ = [
     "AssemblyConfig",
     "AssemblyResult",
     "Contig",
+    "cython_available",
     "DeBruijnGraph",
     "FastaRecord",
     "FastqRecord",
@@ -26,6 +29,7 @@ __all__ = [
     "nx",
     "read_fasta",
     "read_fastq",
+    "run_benchmark",
     "simulate_reads",
     "write_fasta",
     "write_fastq",

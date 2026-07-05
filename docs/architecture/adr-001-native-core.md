@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Superseded by ADR-003
 
 ## Context
 
@@ -14,6 +14,10 @@ memory overhead, multicore execution, and a clean path toward HPC/GPU backends.
 
 Use a Python public API and CLI with a Rust native backend as the first
 acceleration target. Keep C++/CUDA as an optional backend for GPU-heavy kernels.
+
+This was first superseded by ADR-002, which prioritized Cython and
+PyPy-compatible Python paths. ADR-003 restores Rust as the preferred production
+native core while retaining Cython as a tactical accelerator.
 
 ## Rationale
 

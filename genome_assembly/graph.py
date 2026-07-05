@@ -6,8 +6,11 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 from .config import AssemblyConfig
+from .cython_backend import build_edges as cython_build_edges
+from .cython_backend import compact_contigs as cython_compact_contigs
 from .kmers import iter_kmers
 from .native import build_edges as native_build_edges
+from .native import compact_contigs as native_compact_contigs
 
 
 @dataclass(frozen=True)
@@ -43,11 +46,19 @@ class GraphSummary:
 class DeBruijnGraph:
     """A compact in-memory directed de Bruijn graph."""
 
-    def __init__(self, k: int, edges: list[Edge], raw_edge_count: int, min_abundance: int) -> None:
+    def __init__(
+        self,
+        k: int,
+        edges: list[Edge],
+        raw_edge_count: int,
+        min_abundance: int,
+        backend: str = "python",
+    ) -> None:
         self.k = k
         self.edges = edges
         self.raw_edge_count = raw_edge_count
         self.min_abundance = min_abundance
+        self.backend = backend
         self._out_edges: dict[str, list[Edge]] = defaultdict(list)
         self._in_edges: dict[str, list[Edge]] = defaultdict(list)
         self._nodes: set[str] = set()
@@ -63,7 +74,18 @@ class DeBruijnGraph:
         config.validate()
         edge_size = config.k + 1
 
-        if config.backend == "native":
+        if config.backend == "cython":
+            raw_edge_count, edge_rows = cython_build_edges(
+                reads,
+                config.k,
+                min_abundance=config.min_abundance,
+                skip_ambiguous=config.skip_ambiguous,
+            )
+            edges = [
+                Edge(prefix, suffix, sequence, count)
+                for prefix, suffix, sequence, count in edge_rows
+            ]
+        elif config.backend == "native":
             raw_edge_count, edge_rows = native_build_edges(
                 reads,
                 config.k,
@@ -91,7 +113,7 @@ class DeBruijnGraph:
                 "No graph edges remain after filtering; lower k/min_abundance or provide longer reads"
             )
 
-        return cls(config.k, edges, raw_edge_count, config.min_abundance)
+        return cls(config.k, edges, raw_edge_count, config.min_abundance, config.backend)
 
     @property
     def nodes(self) -> set[str]:
@@ -122,6 +144,37 @@ class DeBruijnGraph:
 
     def compact_contigs(self, *, min_length: int = 0) -> list[Contig]:
         """Return maximal non-branching paths as contigs."""
+
+        if self.backend == "cython":
+            contig_rows = cython_compact_contigs(
+                self.k,
+                [(edge.prefix, edge.suffix, edge.sequence, edge.count) for edge in self.edges],
+                min_length=min_length,
+            )
+            return [
+                Contig(
+                    name=f"contig_{index}",
+                    sequence=sequence,
+                    mean_abundance=mean_abundance,
+                    edge_count=edge_count,
+                )
+                for index, (sequence, mean_abundance, edge_count) in enumerate(contig_rows, start=1)
+            ]
+        if self.backend == "native":
+            contig_rows = native_compact_contigs(
+                self.k,
+                [(edge.prefix, edge.suffix, edge.sequence, edge.count) for edge in self.edges],
+                min_length=min_length,
+            )
+            return [
+                Contig(
+                    name=f"contig_{index}",
+                    sequence=sequence,
+                    mean_abundance=mean_abundance,
+                    edge_count=edge_count,
+                )
+                for index, (sequence, mean_abundance, edge_count) in enumerate(contig_rows, start=1)
+            ]
 
         contigs: list[Contig] = []
         visited: set[tuple[str, str]] = set()
