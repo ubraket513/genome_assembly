@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "genome-assembly"
+version = "0.1.0"
+description = "A production-oriented genome assembly library and CLI with a path to native acceleration."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Genome Assembly Contributors" }
+]
+dependencies = [
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+ga = "genome_assembly.cli:app"
+genome-assembly = "genome_assembly.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["genome_assembly"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
