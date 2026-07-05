@@ -64,7 +64,7 @@ pub fn count_kmers_impl(
     let counts = if threads == 1 || reads.len() <= 1 {
         count_reads_chunk(reads, k, skip_ambiguous)
     } else {
-        let chunk_size = (reads.len() + threads - 1) / threads;
+        let chunk_size = reads.len().div_ceil(threads);
         let pool = ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()

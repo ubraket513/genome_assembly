@@ -235,7 +235,13 @@ Acceptance criteria:
 
 ## Stage 8: PyPy Compatibility Lane
 
-Status: optional after benchmark harness.
+Status: blocked on toolchain. `pypy3` is not installed in the current
+environment, so the pure-Python backend has not been validated under PyPy yet.
+The only runtime dependency is Typer (pure-Python Click), which has no CPython-C
+requirement, so the `backend="python"` path is expected to run on PyPy; the
+Cython and Rust extension backends are CPython-oriented and are not advertised
+as PyPy accelerators. Run the validation commands below once `pypy3` is
+available to confirm and lift this block.
 
 Goal: validate whether PyPy provides useful speedups for the pure-Python backend.
 
@@ -264,7 +270,9 @@ Acceptance criteria:
 
 ## Stage 9: C++/CUDA Evaluation Lane
 
-Status: gated by benchmark data.
+Status: decided — deferred. No benchmark bottleneck currently justifies the C++
+build/ABI cost. Recorded in `docs/architecture/adr-004-defer-cpp-and-gpu-lanes.md`
+with explicit re-entry criteria.
 
 Goal: decide whether C++ should enter as a specialist backend.
 
@@ -326,6 +334,10 @@ Acceptance criteria:
 
 ## Stage 11: GPU Research Spike
 
+Status: decided — deferred. No profiled bottleneck yet warrants a GPU kernel,
+and irregular graph traversal is a poor GPU fit. Recorded in
+`docs/architecture/adr-004-defer-cpp-and-gpu-lanes.md` with re-entry criteria.
+
 Goal: decide whether GPU acceleration is worth implementing.
 
 Implementation tasks:
@@ -344,18 +356,27 @@ Acceptance criteria:
 
 ## Stage 12: Release Hardening
 
+Status: complete.
+
 Goal: make the project usable by others.
 
 Implementation tasks:
 
-- Add CI for Python tests, Rust tests, and linting.
-- Add wheel build workflow.
-- Add examples and troubleshooting docs.
-- Add changelog and versioning policy.
-- Add license file.
+- Done: CI (`.github/workflows/ci.yml`) runs Python tests on 3.10-3.12, Rust
+  tests, clippy, `cargo fmt --check`, and a full-parity job that builds the
+  Cython and native extensions.
+- Done: release workflow (`.github/workflows/release.yml`) builds the
+  pure-Python sdist/wheel and native wheels for Linux/macOS/Windows as
+  artifacts. Publishing is left as a manual, human-authorized step.
+- Done: examples in `README.md` and `docs/TROUBLESHOOTING.md`.
+- Done: `CHANGELOG.md` with a stated `0.x` versioning policy.
+- Done: `LICENSE` (MIT), matching `pyproject.toml`.
 
 Acceptance criteria:
 
-- Fresh clone can run all documented commands.
-- Release artifacts are reproducible.
-- Docs state which backends are stable and which are experimental.
+- Fresh clone can run all documented commands. CI exercises the documented
+  install and test flows on a clean runner.
+- Release artifacts are reproducible. `python -m build` produces the
+  pure-Python wheel/sdist (verified locally); native wheels come from maturin.
+- Docs state which backends are stable and which are experimental. See the
+  backend status table in `docs/TROUBLESHOOTING.md`.

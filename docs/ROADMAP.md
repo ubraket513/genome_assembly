@@ -145,7 +145,9 @@ Success criteria:
 
 ### M5: PyPy Compatibility Lane
 
-Status: optional after benchmark harness.
+Status: blocked on toolchain (`pypy3` not installed locally). The pure-Python
+backend has no CPython-only dependency, so it is expected to run on PyPy; this
+is unvalidated until a PyPy interpreter is available.
 
 Validate the pure-Python backend under PyPy and document unsupported paths.
 
@@ -157,7 +159,8 @@ Success criteria:
 
 ### M6: C++/CUDA Evaluation Lane
 
-Status: gated by benchmarks.
+Status: deferred (ADR-004). No benchmark bottleneck justifies C++ yet; re-entry
+criteria are documented.
 
 Evaluate C++ only when it solves a specific problem better than Rust or Cython.
 
@@ -188,6 +191,9 @@ Feature order:
 
 ### M8: GPU Exploration
 
+Status: deferred (ADR-004). Revisit once profiling identifies a regular,
+GPU-friendly kernel that beats the CPU native backend end to end.
+
 Prototype GPU only where it is likely to pay off.
 
 Candidate kernels:
@@ -202,15 +208,21 @@ the complexity.
 
 ### M9: Distribution and Integration
 
+Status: complete for the initial release.
+
 Prepare release-quality packaging.
 
 Targets:
 
-- Pure-Python wheel remains easy to install.
-- Native wheels are built for common Linux/macOS platforms.
-- CLI supports shell completion, useful errors, and reproducible reports.
-- Documentation includes install, examples, performance notes, and handoff
-  instructions.
+- Done: pure-Python wheel builds with `python -m build` and installs without a
+  compiler.
+- Done: native wheels build via maturin for Linux/macOS/Windows in the release
+  workflow.
+- Partial: CLI has useful, actionable errors and reproducible reports. Typer
+  provides shell completion out of the box; a documented completion recipe is
+  future polish.
+- Done: documentation includes install, examples, troubleshooting, backend
+  status, and the staged plan.
 
 ## Strategic Edge
 

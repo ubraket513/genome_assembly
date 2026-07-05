@@ -11,6 +11,7 @@ assembly core:
 - de Bruijn graph construction from `(k + 1)`-mers
 - maximal non-branching path compaction into contigs
 - N50/Nx assembly metrics
+- conservative graph cleaning (tip clipping and simple bubble popping)
 - a Typer-powered CLI
 - backend selection for Python, Cython, and Rust native acceleration
 
@@ -33,6 +34,15 @@ Assemble reads:
 ```bash
 ga assemble reads.fastq --k 31 --min-abundance 1 --outdir assembly_out --emit-gfa
 ```
+
+Optional graph cleaning (both default to 0, meaning disabled). Keep the tip
+length small, around `2 * k`, so only short error branches are clipped:
+
+```bash
+ga assemble reads.fastq --k 31 --tip-length 62 --bubble-length 130 --outdir assembly_out
+```
+
+Removed-edge counts are written to `assembly_out/summary.json` under `graph`.
 
 Compute contig statistics:
 
@@ -125,3 +135,9 @@ safety cost.
 
 See `docs/ROADMAP.md` for the product outline and
 `docs/IMPLEMENTATION_PLAN.md` for the staged engineering plan.
+`docs/TROUBLESHOOTING.md` covers backend status and common install issues, and
+`CHANGELOG.md` tracks releases.
+
+## License
+
+MIT. See `LICENSE`.
