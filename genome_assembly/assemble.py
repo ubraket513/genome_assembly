@@ -35,8 +35,6 @@ def assemble_short_reads(reads: list[str], config: AssemblyConfig | None = None)
 
     config = config or AssemblyConfig()
     config.validate()
-    if config.backend == "native":
-        raise NotImplementedError("The native backend is not implemented yet; use backend='python'")
 
     graph = DeBruijnGraph.from_reads(reads, config)
     contigs = graph.compact_contigs(min_length=config.min_contig_length)

@@ -6,6 +6,7 @@ from genome_assembly import AssemblyConfig, assemble_short_reads, n50, nx, simul
 from genome_assembly.io import FastaRecord, FastqRecord, read_fasta, read_fastq, write_fasta, write_fastq
 from genome_assembly.kmers import canonical_kmer, iter_kmers, reverse_complement
 from genome_assembly.metrics import assembly_stats
+from genome_assembly.native import native_available, require_native
 
 
 class KmerTests(unittest.TestCase):
@@ -68,6 +69,33 @@ class SimulationAndIoTests(unittest.TestCase):
 
             self.assertEqual(read_fasta(fasta)[0].sequence, "ACGT")
             self.assertEqual(read_fastq(fastq)[0].quality, "IIII")
+
+
+class NativeBridgeTests(unittest.TestCase):
+    def test_native_available_returns_bool(self):
+        self.assertIsInstance(native_available(), bool)
+
+    def test_missing_native_extension_has_actionable_error(self):
+        if native_available():
+            self.assertIsNotNone(require_native())
+            return
+
+        with self.assertRaisesRegex(RuntimeError, "maturin develop --release"):
+            require_native()
+
+    def test_native_backend_matches_python_when_available(self):
+        if not native_available():
+            self.skipTest("native extension is not installed")
+
+        reads = ["ACGTTA", "GTTACC"]
+        python_result = assemble_short_reads(reads, AssemblyConfig(k=3, backend="python"))
+        native_result = assemble_short_reads(reads, AssemblyConfig(k=3, backend="native"))
+
+        self.assertEqual(python_result.summary, native_result.summary)
+        self.assertEqual(
+            [contig.sequence for contig in python_result.contigs],
+            [contig.sequence for contig in native_result.contigs],
+        )
 
 
 if __name__ == "__main__":

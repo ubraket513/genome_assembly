@@ -1,4 +1,6 @@
-__pycache__/*
+__pycache__/
+**/__pycache__/
+*.pyc
 .claude/*
 .playwright/*
 .serena/*
@@ -12,3 +14,4 @@ dist/
 assembly_out/
 *.fastq
 *.fq
+native/**/target/

@@ -5,6 +5,7 @@ from .config import AssemblyConfig
 from .graph import Contig, DeBruijnGraph, GraphSummary
 from .io import FastaRecord, FastqRecord, read_fasta, read_fastq, write_fasta, write_fastq
 from .metrics import assembly_stats, n50, nx
+from .native import native_available
 from .simulate import SimulatedReads, simulate_reads
 
 __version__ = "0.1.0"
@@ -21,6 +22,7 @@ __all__ = [
     "assemble_short_reads",
     "assembly_stats",
     "n50",
+    "native_available",
     "nx",
     "read_fasta",
     "read_fastq",

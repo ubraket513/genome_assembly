@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from .config import AssemblyConfig
 from .kmers import iter_kmers
+from .native import build_edges as native_build_edges
 
 
 @dataclass(frozen=True)
@@ -61,17 +62,29 @@ class DeBruijnGraph:
     def from_reads(cls, reads: list[str], config: AssemblyConfig) -> "DeBruijnGraph":
         config.validate()
         edge_size = config.k + 1
-        counts: Counter[str] = Counter()
 
-        for read in reads:
-            counts.update(iter_kmers(read, edge_size, skip_ambiguous=config.skip_ambiguous))
+        if config.backend == "native":
+            raw_edge_count, edge_rows = native_build_edges(
+                reads,
+                config.k,
+                min_abundance=config.min_abundance,
+                skip_ambiguous=config.skip_ambiguous,
+            )
+            edges = [
+                Edge(prefix, suffix, sequence, count)
+                for prefix, suffix, sequence, count in edge_rows
+            ]
+        else:
+            python_counts: Counter[str] = Counter()
+            for read in reads:
+                python_counts.update(iter_kmers(read, edge_size, skip_ambiguous=config.skip_ambiguous))
 
-        raw_edge_count = sum(counts.values())
-        edges = [
-            Edge(kmer[:-1], kmer[1:], kmer, count)
-            for kmer, count in sorted(counts.items())
-            if count >= config.min_abundance
-        ]
+            raw_edge_count = sum(python_counts.values())
+            edges = [
+                Edge(kmer[:-1], kmer[1:], kmer, count)
+                for kmer, count in sorted(python_counts.items())
+                if count >= config.min_abundance
+            ]
 
         if not edges:
             raise ValueError(

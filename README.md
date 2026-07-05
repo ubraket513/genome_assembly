@@ -59,3 +59,31 @@ current backend is pure Python for correctness and testability. The next backend
 should move k-mer counting, graph construction, and unitig compaction into Rust,
 with optional C++/CUDA kernels later for GPU-heavy stages such as sorting,
 minimizer bucketing, mapping, and consensus.
+
+The Rust backend scaffold lives in `native/genome_assembly_native`.
+
+```bash
+cargo test --manifest-path native/genome_assembly_native/Cargo.toml
+```
+
+For local native-backend experimentation:
+
+```bash
+python -m pip install maturin
+source .venv/bin/activate
+unset CONDA_PREFIX  # needed when this shell was launched from Conda
+cd native/genome_assembly_native
+maturin develop --release
+cd ../..
+```
+
+Then use:
+
+```python
+from genome_assembly import AssemblyConfig, assemble_short_reads
+
+result = assemble_short_reads(reads, AssemblyConfig(k=31, backend="native"))
+```
+
+See `docs/ROADMAP.md` for the product outline and
+`docs/IMPLEMENTATION_PLAN.md` for the staged engineering plan.
