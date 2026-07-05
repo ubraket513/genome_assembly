@@ -77,7 +77,7 @@ def assemble(
         str,
         typer.Option("--backend", help="Execution backend: python, cython, or native."),
     ] = "python",
-    threads: Annotated[int, typer.Option("--threads", "-t", min=1, help="Reserved for native backends.")] = 1,
+    threads: Annotated[int, typer.Option("--threads", "-t", min=1, help="Worker threads for the native backend (ignored by python/cython).")] = 1,
     emit_gfa: Annotated[bool, typer.Option("--emit-gfa", help="Write graph.gfa alongside contigs.")] = False,
 ) -> None:
     """Assemble short reads into contigs."""
@@ -155,7 +155,7 @@ def benchmark(
         int,
         typer.Option("--min-contig-length", min=0, help="Suppress contigs shorter than this length."),
     ] = 0,
-    threads: Annotated[int, typer.Option("--threads", "-t", min=1, help="Reserved for native backends.")] = 1,
+    threads: Annotated[int, typer.Option("--threads", "-t", min=1, help="Worker threads for the native backend (ignored by python/cython).")] = 1,
 ) -> None:
     """Run deterministic backend benchmarks on simulated reads."""
 

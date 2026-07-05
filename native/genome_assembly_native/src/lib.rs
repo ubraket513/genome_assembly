@@ -1,6 +1,8 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use std::collections::{BTreeMap, BTreeSet};
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 fn normalize_sequence(sequence: &str) -> Vec<u8> {
     sequence
@@ -16,34 +18,73 @@ fn is_unambiguous_dna(sequence: &[u8]) -> bool {
         .all(|byte| matches!(byte, b'A' | b'C' | b'G' | b'T'))
 }
 
-pub fn count_kmers_impl(
-    reads: &[String],
-    k: usize,
-    skip_ambiguous: bool,
-) -> Result<Vec<(String, usize)>, String> {
-    if k == 0 {
-        return Err("k must be >= 1".to_string());
-    }
-
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+fn count_reads_chunk(reads: &[String], k: usize, skip_ambiguous: bool) -> HashMap<Vec<u8>, usize> {
+    let mut counts: HashMap<Vec<u8>, usize> = HashMap::new();
     for read in reads {
         let sequence = normalize_sequence(read);
         if sequence.len() < k {
             continue;
         }
-
         for start in 0..=(sequence.len() - k) {
             let window = &sequence[start..start + k];
             if skip_ambiguous && !is_unambiguous_dna(window) {
                 continue;
             }
-            let kmer = String::from_utf8(window.to_vec())
-                .map_err(|_| "sequence contained invalid UTF-8 after normalization".to_string())?;
-            *counts.entry(kmer).or_insert(0) += 1;
+            *counts.entry(window.to_vec()).or_insert(0) += 1;
         }
     }
+    counts
+}
 
-    Ok(counts.into_iter().collect())
+fn merge_counts(
+    mut into: HashMap<Vec<u8>, usize>,
+    other: HashMap<Vec<u8>, usize>,
+) -> HashMap<Vec<u8>, usize> {
+    for (kmer, count) in other {
+        *into.entry(kmer).or_insert(0) += count;
+    }
+    into
+}
+
+pub fn count_kmers_impl(
+    reads: &[String],
+    k: usize,
+    skip_ambiguous: bool,
+    threads: usize,
+) -> Result<Vec<(String, usize)>, String> {
+    if k == 0 {
+        return Err("k must be >= 1".to_string());
+    }
+    if threads == 0 {
+        return Err("threads must be >= 1".to_string());
+    }
+
+    // Integer merge is associative and commutative, so any thread count yields
+    // the same counts; the final sort makes the row order deterministic too.
+    let counts = if threads == 1 || reads.len() <= 1 {
+        count_reads_chunk(reads, k, skip_ambiguous)
+    } else {
+        let chunk_size = (reads.len() + threads - 1) / threads;
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .map_err(|err| err.to_string())?;
+        pool.install(|| {
+            reads
+                .par_chunks(chunk_size)
+                .map(|chunk| count_reads_chunk(chunk, k, skip_ambiguous))
+                .reduce(HashMap::new, merge_counts)
+        })
+    };
+
+    let mut rows: Vec<(String, usize)> = Vec::with_capacity(counts.len());
+    for (kmer, count) in counts {
+        let kmer = String::from_utf8(kmer)
+            .map_err(|_| "sequence contained invalid UTF-8 after normalization".to_string())?;
+        rows.push((kmer, count));
+    }
+    rows.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(rows)
 }
 
 pub type EdgeRow = (String, String, String, usize);
@@ -54,6 +95,7 @@ pub fn build_edges_impl(
     node_k: usize,
     min_abundance: usize,
     skip_ambiguous: bool,
+    threads: usize,
 ) -> Result<(usize, Vec<EdgeRow>), String> {
     if node_k == 0 {
         return Err("node_k must be >= 1".to_string());
@@ -63,7 +105,7 @@ pub fn build_edges_impl(
     }
 
     let edge_k = node_k + 1;
-    let counts = count_kmers_impl(reads, edge_k, skip_ambiguous)?;
+    let counts = count_kmers_impl(reads, edge_k, skip_ambiguous, threads)?;
     let raw_edge_count = counts.iter().map(|(_, count)| *count).sum();
     let mut edges = Vec::new();
 
@@ -213,24 +255,27 @@ pub fn compact_contigs_impl(
 }
 
 #[pyfunction]
-#[pyo3(signature = (reads, k, skip_ambiguous = true))]
+#[pyo3(signature = (reads, k, skip_ambiguous = true, threads = 1))]
 fn count_kmers(
     reads: Vec<String>,
     k: usize,
     skip_ambiguous: bool,
+    threads: usize,
 ) -> PyResult<Vec<(String, usize)>> {
-    count_kmers_impl(&reads, k, skip_ambiguous).map_err(PyValueError::new_err)
+    count_kmers_impl(&reads, k, skip_ambiguous, threads).map_err(PyValueError::new_err)
 }
 
 #[pyfunction]
-#[pyo3(signature = (reads, node_k, min_abundance = 1, skip_ambiguous = true))]
+#[pyo3(signature = (reads, node_k, min_abundance = 1, skip_ambiguous = true, threads = 1))]
 fn build_edges(
     reads: Vec<String>,
     node_k: usize,
     min_abundance: usize,
     skip_ambiguous: bool,
+    threads: usize,
 ) -> PyResult<(usize, Vec<EdgeRow>)> {
-    build_edges_impl(&reads, node_k, min_abundance, skip_ambiguous).map_err(PyValueError::new_err)
+    build_edges_impl(&reads, node_k, min_abundance, skip_ambiguous, threads)
+        .map_err(PyValueError::new_err)
 }
 
 #[pyfunction]
@@ -258,7 +303,7 @@ mod tests {
     #[test]
     fn counts_kmers_deterministically() {
         let reads = vec!["ACGTAC".to_string()];
-        let result = count_kmers_impl(&reads, 3, true).unwrap();
+        let result = count_kmers_impl(&reads, 3, true, 1).unwrap();
         assert_eq!(
             result,
             vec![
@@ -273,21 +318,21 @@ mod tests {
     #[test]
     fn counts_repeated_kmers() {
         let reads = vec!["AAAAA".to_string()];
-        let result = count_kmers_impl(&reads, 3, true).unwrap();
+        let result = count_kmers_impl(&reads, 3, true, 1).unwrap();
         assert_eq!(result, vec![("AAA".to_string(), 3)]);
     }
 
     #[test]
     fn skips_ambiguous_bases() {
         let reads = vec!["ACNTG".to_string()];
-        let result = count_kmers_impl(&reads, 3, true).unwrap();
+        let result = count_kmers_impl(&reads, 3, true, 1).unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
     fn can_keep_ambiguous_bases() {
         let reads = vec!["ACNTG".to_string()];
-        let result = count_kmers_impl(&reads, 3, false).unwrap();
+        let result = count_kmers_impl(&reads, 3, false, 1).unwrap();
         assert_eq!(
             result,
             vec![
@@ -301,14 +346,14 @@ mod tests {
     #[test]
     fn rejects_zero_k() {
         let reads = vec!["ACGT".to_string()];
-        let error = count_kmers_impl(&reads, 0, true).unwrap_err();
+        let error = count_kmers_impl(&reads, 0, true, 1).unwrap_err();
         assert_eq!(error, "k must be >= 1");
     }
 
     #[test]
     fn builds_edge_table() {
         let reads = vec!["ACGTTA".to_string(), "GTTACC".to_string()];
-        let (raw_edge_count, edges) = build_edges_impl(&reads, 3, 1, true).unwrap();
+        let (raw_edge_count, edges) = build_edges_impl(&reads, 3, 1, true, 1).unwrap();
         assert_eq!(raw_edge_count, 6);
         assert_eq!(
             edges,
@@ -325,7 +370,7 @@ mod tests {
     #[test]
     fn filters_low_abundance_edges() {
         let reads = vec!["ACGTTA".to_string(), "GTTACC".to_string()];
-        let (raw_edge_count, edges) = build_edges_impl(&reads, 3, 2, true).unwrap();
+        let (raw_edge_count, edges) = build_edges_impl(&reads, 3, 2, true, 1).unwrap();
         assert_eq!(raw_edge_count, 6);
         assert_eq!(
             edges,
@@ -336,14 +381,14 @@ mod tests {
     #[test]
     fn rejects_zero_min_abundance() {
         let reads = vec!["ACGT".to_string()];
-        let error = build_edges_impl(&reads, 3, 0, true).unwrap_err();
+        let error = build_edges_impl(&reads, 3, 0, true, 1).unwrap_err();
         assert_eq!(error, "min_abundance must be >= 1");
     }
 
     #[test]
     fn compacts_linear_contig() {
         let reads = vec!["ACGTTA".to_string(), "GTTACC".to_string()];
-        let (_, edges) = build_edges_impl(&reads, 3, 1, true).unwrap();
+        let (_, edges) = build_edges_impl(&reads, 3, 1, true, 1).unwrap();
         let contigs = compact_contigs_impl(3, &edges, 0).unwrap();
         assert_eq!(contigs, vec![("ACGTTACC".to_string(), 1.2, 5)]);
     }
@@ -362,7 +407,7 @@ mod tests {
     #[test]
     fn filters_short_contigs() {
         let reads = vec!["ACGTTA".to_string(), "GTTACC".to_string()];
-        let (_, edges) = build_edges_impl(&reads, 3, 1, true).unwrap();
+        let (_, edges) = build_edges_impl(&reads, 3, 1, true, 1).unwrap();
         let contigs = compact_contigs_impl(3, &edges, 9).unwrap();
         assert!(contigs.is_empty());
     }
@@ -371,5 +416,28 @@ mod tests {
     fn rejects_zero_node_k_for_compaction() {
         let error = compact_contigs_impl(0, &[], 0).unwrap_err();
         assert_eq!(error, "node_k must be >= 1");
+    }
+
+    #[test]
+    fn parallel_counts_match_single_thread() {
+        let bases = [b'A', b'C', b'G', b'T'];
+        let reads: Vec<String> = (0..64)
+            .map(|i| {
+                (0..24)
+                    .map(|j| bases[(i * 7 + j * 3) % 4] as char)
+                    .collect::<String>()
+            })
+            .collect();
+        let single = count_kmers_impl(&reads, 5, true, 1).unwrap();
+        let parallel = count_kmers_impl(&reads, 5, true, 4).unwrap();
+        assert_eq!(single, parallel);
+        assert!(single.iter().any(|(_, count)| *count > 1));
+    }
+
+    #[test]
+    fn rejects_zero_threads() {
+        let reads = vec!["ACGT".to_string()];
+        let error = count_kmers_impl(&reads, 3, true, 0).unwrap_err();
+        assert_eq!(error, "threads must be >= 1");
     }
 }

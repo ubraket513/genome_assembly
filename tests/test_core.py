@@ -128,6 +128,22 @@ class NativeBridgeTests(unittest.TestCase):
             [contig.sequence for contig in native_result.contigs],
         )
 
+    def test_native_multithread_output_matches_single_thread(self):
+        if not native_available():
+            self.skipTest("native extension is not installed")
+
+        reads = simulate_reads("ACGTACGTTAGGCCATATCGATCGTAGCTAG" * 4, read_length=12, coverage=8, seed=3).reads
+        self.assertGreater(len(reads), 4)
+
+        single = assemble_short_reads(reads, AssemblyConfig(k=5, backend="native", threads=1))
+        multi = assemble_short_reads(reads, AssemblyConfig(k=5, backend="native", threads=4))
+
+        self.assertEqual(single.summary, multi.summary)
+        self.assertEqual(
+            [contig.sequence for contig in single.contigs],
+            [contig.sequence for contig in multi.contigs],
+        )
+
 
 class CythonBridgeTests(unittest.TestCase):
     def test_cython_available_returns_bool(self):

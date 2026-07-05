@@ -48,13 +48,16 @@ def count_kmers(
     k: int,
     *,
     skip_ambiguous: bool = True,
+    threads: int = 1,
 ) -> list[tuple[str, int]]:
     """Count k-mers with the optional Rust extension."""
 
     if k < 1:
         raise ValueError("k must be >= 1")
+    if threads < 1:
+        raise ValueError("threads must be >= 1")
     native = require_native()
-    return native.count_kmers(list(reads), k, skip_ambiguous)
+    return native.count_kmers(list(reads), k, skip_ambiguous, threads)
 
 
 def build_edges(
@@ -63,6 +66,7 @@ def build_edges(
     *,
     min_abundance: int = 1,
     skip_ambiguous: bool = True,
+    threads: int = 1,
 ) -> tuple[int, list[tuple[str, str, str, int]]]:
     """Build a deterministic de Bruijn edge table with the optional Rust extension."""
 
@@ -70,12 +74,15 @@ def build_edges(
         raise ValueError("node_k must be >= 1")
     if min_abundance < 1:
         raise ValueError("min_abundance must be >= 1")
+    if threads < 1:
+        raise ValueError("threads must be >= 1")
     native = require_native()
     raw_edge_count, edges = native.build_edges(
         list(reads),
         node_k,
         min_abundance,
         skip_ambiguous,
+        threads,
     )
     return raw_edge_count, edges
 

@@ -91,6 +91,7 @@ class DeBruijnGraph:
                 config.k,
                 min_abundance=config.min_abundance,
                 skip_ambiguous=config.skip_ambiguous,
+                threads=config.threads,
             )
             edges = [
                 Edge(prefix, suffix, sequence, count)

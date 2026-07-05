@@ -41,6 +41,8 @@ Completed:
 - CLI `--backend` selection for `python`, `cython`, and `native`.
 - CLI `benchmark` command for reproducible backend comparisons on simulated
   reads.
+- Parallel native k-mer counting honoring `--threads`, with deterministic
+  per-thread map merging and Rust/Python parity tests.
 
 Known boundaries:
 
@@ -122,17 +124,21 @@ Metrics:
 
 ### M4: Multicore CPU/HPC
 
-Status: next.
+Status: complete for parallel native k-mer counting; chunked I/O and minimizer
+partitioning still open.
 
-Introduce parallel Rust execution with chunked I/O, minimizer partitioning, and
-thread-aware memory controls. Keep Cython single-process unless profiling shows
-clear value.
+Parallel native k-mer counting now runs on a Rayon thread pool sized by
+`--threads`, with deterministic per-thread map merging. Chunked/streaming I/O,
+minimizer partitioning, and thread-aware memory controls remain future work and
+are deferred until a streaming read path exists. Cython stays single-process.
 
 Success criteria:
 
-- `--threads` affects native work.
-- Deterministic output across thread counts.
-- Benchmark report shows speedup and memory behavior.
+- `--threads` affects native work. Done.
+- Deterministic output across thread counts. Done (Rust + Python parity tests).
+- Benchmark report shows speedup and memory behavior. Partial: `ga benchmark`
+  honors `--threads` and records wall time; peak memory is still Python-traced
+  only, so native RSS accounting stays open (see M3).
 
 ### M5: PyPy Compatibility Lane
 
