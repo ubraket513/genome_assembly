@@ -24,6 +24,11 @@ patch releases are reserved for backward-compatible fixes.
 - Beginner-friendly CLI: `ga quickstart` walkthrough, examples in `--help`,
   next-step hints after `simulate`/`assemble`, and clean one-line errors instead
   of tracebacks on common mistakes.
+- Benchmark now records peak process RSS (`peak_rss_bytes`, `rss_delta_bytes`),
+  capturing native memory that tracemalloc misses.
+- `ga benchmark --genome-size N` synthesizes a deterministic random genome for
+  bacterial-scale and larger tiers without downloads; the `reference` argument is
+  now optional. New `generate_random_genome()` helper.
 
 ### Changed
 

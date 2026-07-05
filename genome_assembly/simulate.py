@@ -18,6 +18,20 @@ class SimulatedReads:
     seed: int | None
 
 
+def generate_random_genome(length: int, *, seed: int | None = None) -> str:
+    """Return a deterministic random DNA sequence of the requested length.
+
+    Useful for scaling benchmarks (bacterial and larger) without downloading
+    reference data. The same length and seed always produce the same sequence.
+    """
+
+    if length < 1:
+        raise ValueError("length must be >= 1")
+    rng = random.Random(seed)
+    # random.choices is markedly faster than per-base calls for large genomes.
+    return "".join(rng.choices("ACGT", k=length))
+
+
 def simulate_reads(
     sequence: str,
     *,

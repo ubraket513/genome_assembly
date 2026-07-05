@@ -4,6 +4,9 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+#[path = "minimizers.rs"]
+mod sketch;
+
 fn normalize_sequence(sequence: &str) -> Vec<u8> {
     sequence
         .bytes()
@@ -288,11 +291,43 @@ fn compact_contigs(
     compact_contigs_impl(node_k, &edge_rows, min_length).map_err(PyValueError::new_err)
 }
 
+#[pyfunction]
+#[pyo3(signature = (sequence, w, m))]
+fn minimizers(sequence: &str, w: usize, m: usize) -> PyResult<Vec<(usize, String)>> {
+    let seq = normalize_sequence(sequence);
+    let out = sketch::minimizers(&seq, w, m).map_err(PyValueError::new_err)?;
+    Ok(out
+        .into_iter()
+        .map(|(pos, bytes)| (pos, String::from_utf8_lossy(&bytes).into_owned()))
+        .collect())
+}
+
+#[pyfunction]
+#[pyo3(signature = (sequence, k, s, t = 0))]
+fn syncmers(sequence: &str, k: usize, s: usize, t: usize) -> PyResult<Vec<(usize, String)>> {
+    let seq = normalize_sequence(sequence);
+    let out = sketch::syncmers(&seq, k, s, t).map_err(PyValueError::new_err)?;
+    Ok(out
+        .into_iter()
+        .map(|(pos, bytes)| (pos, String::from_utf8_lossy(&bytes).into_owned()))
+        .collect())
+}
+
+#[pyfunction]
+#[pyo3(signature = (kmer, m, num_buckets))]
+fn minimizer_bucket(kmer: &str, m: usize, num_buckets: usize) -> PyResult<usize> {
+    let seq = normalize_sequence(kmer);
+    sketch::minimizer_bucket(&seq, m, num_buckets).map_err(PyValueError::new_err)
+}
+
 #[pymodule]
 fn genome_assembly_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(count_kmers, m)?)?;
     m.add_function(wrap_pyfunction!(build_edges, m)?)?;
     m.add_function(wrap_pyfunction!(compact_contigs, m)?)?;
+    m.add_function(wrap_pyfunction!(minimizers, m)?)?;
+    m.add_function(wrap_pyfunction!(syncmers, m)?)?;
+    m.add_function(wrap_pyfunction!(minimizer_bucket, m)?)?;
     Ok(())
 }
 

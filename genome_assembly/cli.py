@@ -220,7 +220,14 @@ def stats(
 
 @app.command()
 def benchmark(
-    reference: Annotated[Path, typer.Argument(exists=True, readable=True, help="Reference FASTA file.")],
+    reference: Annotated[
+        Path | None,
+        typer.Argument(exists=True, readable=True, help="Reference FASTA file (omit if using --genome-size)."),
+    ] = None,
+    genome_size: Annotated[
+        int | None,
+        typer.Option("--genome-size", min=1, help="Benchmark on a synthetic random genome of this many bp instead of a reference file. Enables bacterial-scale tiers without downloads."),
+    ] = None,
     output: Annotated[Path, typer.Option("--output", "-o", help="Benchmark JSON output path.")] = Path(
         "benchmark.json"
     ),
@@ -244,8 +251,12 @@ def benchmark(
 ) -> None:
     """Run deterministic backend benchmarks on simulated reads."""
 
+    if (reference is None) == (genome_size is None):
+        _fail("provide exactly one of a REFERENCE file argument or --genome-size")
+
     report = run_benchmark(
         reference,
+        synthetic_genome_size=genome_size,
         backends=parse_backend_list(backends),
         k=k,
         read_length=read_length,

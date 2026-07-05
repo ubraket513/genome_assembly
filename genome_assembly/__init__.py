@@ -8,7 +8,8 @@ from .graph import Contig, DeBruijnGraph, GraphSummary
 from .io import FastaRecord, FastqRecord, read_fasta, read_fastq, write_fasta, write_fastq
 from .metrics import assembly_stats, n50, nx
 from .native import native_available
-from .simulate import SimulatedReads, simulate_reads
+from .simulate import SimulatedReads, generate_random_genome, simulate_reads
+from .sketch import minimizer_bucket, minimizers, syncmers
 
 __version__ = "0.1.0"
 
@@ -24,9 +25,13 @@ __all__ = [
     "SimulatedReads",
     "assemble_short_reads",
     "assembly_stats",
+    "generate_random_genome",
+    "minimizer_bucket",
+    "minimizers",
     "n50",
     "native_available",
     "nx",
+    "syncmers",
     "read_fasta",
     "read_fastq",
     "run_benchmark",

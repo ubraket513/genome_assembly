@@ -120,10 +120,15 @@ Benchmark tiers:
 Metrics:
 
 - Wall time.
-- Peak traced Python memory initially; process RSS should be added for native
-  memory accounting later.
+- Peak traced Python memory and peak process RSS. RSS captures native (Rust)
+  allocations that tracemalloc cannot see; `rss_delta_bytes` reports per-run
+  growth above the pre-run baseline.
 - Threads used.
 - Contig count, total bp, N50, NG50, GC percent.
+
+Tiers are reachable without downloads: pass `--genome-size` to `ga benchmark`
+to synthesize a deterministic random genome (bacterial-scale and larger) in
+place of a reference FASTA.
 
 ### M4: Multicore CPU/HPC
 

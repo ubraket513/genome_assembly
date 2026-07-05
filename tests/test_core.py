@@ -5,7 +5,17 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from genome_assembly import AssemblyConfig, assemble_short_reads, n50, nx, simulate_reads
+from genome_assembly import (
+    AssemblyConfig,
+    assemble_short_reads,
+    generate_random_genome,
+    minimizer_bucket,
+    minimizers,
+    n50,
+    nx,
+    simulate_reads,
+    syncmers,
+)
 from genome_assembly.cli import app
 from genome_assembly.benchmark import parse_backend_list, run_benchmark
 from genome_assembly.io import FastaRecord, FastqRecord, read_fasta, read_fastq, write_fasta, write_fastq
@@ -75,6 +85,61 @@ class SimulationAndIoTests(unittest.TestCase):
 
             self.assertEqual(read_fasta(fasta)[0].sequence, "ACGT")
             self.assertEqual(read_fastq(fastq)[0].quality, "IIII")
+
+
+class SketchTests(unittest.TestCase):
+    def setUp(self):
+        self.seq = generate_random_genome(400, seed=11)
+
+    def test_minimizers_are_deterministic_and_ordered(self):
+        first = minimizers(self.seq, w=10, m=8)
+        second = minimizers(self.seq, w=10, m=8)
+        self.assertEqual(first, second)
+        self.assertTrue(first)
+        positions = [pos for pos, _ in first]
+        self.assertEqual(positions, sorted(set(positions)))  # strictly increasing
+        for pos, mmer in first:
+            self.assertEqual(self.seq[pos : pos + 8], mmer)
+
+    def test_short_sequence_returns_global_minimizer(self):
+        result = minimizers("ACGTA", w=50, m=3)
+        self.assertEqual(len(result), 1)
+
+    def test_syncmers_have_bounded_spacing(self):
+        syncs = syncmers(self.seq, k=15, s=6, t=0)
+        self.assertTrue(syncs)
+        for pos, kmer in syncs:
+            self.assertEqual(len(kmer), 15)
+            self.assertEqual(self.seq[pos : pos + 15], kmer)
+        # Open syncmers guarantee at least one seed every (k - s + 1) bases.
+        positions = [pos for pos, _ in syncs]
+        for earlier, later in zip(positions, positions[1:]):
+            self.assertLessEqual(later - earlier, 15 - 6 + 1)
+
+    def test_syncmer_offset_out_of_range_raises(self):
+        with self.assertRaises(ValueError):
+            syncmers(self.seq, k=10, s=4, t=99)
+
+    def test_minimizer_bucket_stable_and_in_range(self):
+        buckets = {minimizer_bucket(self.seq[i : i + 21], m=7, num_buckets=16) for i in range(50)}
+        self.assertTrue(all(0 <= b < 16 for b in buckets))
+        self.assertEqual(
+            minimizer_bucket("ACGTACGTACGT", m=5, num_buckets=8),
+            minimizer_bucket("ACGTACGTACGT", m=5, num_buckets=8),
+        )
+
+    def test_native_sketch_matches_python(self):
+        if not native_available():
+            self.skipTest("native extension is not installed")
+        from genome_assembly import native
+
+        self.assertEqual(minimizers(self.seq, 10, 8), native.minimizers(self.seq, 10, 8))
+        self.assertEqual(syncmers(self.seq, 15, 6, 0), native.syncmers(self.seq, 15, 6, 0))
+        for i in range(30):
+            kmer = self.seq[i : i + 21]
+            self.assertEqual(
+                minimizer_bucket(kmer, 7, 16), native.minimizer_bucket(kmer, 7, 16)
+            )
 
 
 class GraphCleaningTests(unittest.TestCase):
@@ -170,10 +235,41 @@ class BenchmarkTests(unittest.TestCase):
 
         self.assertEqual(report["benchmark"]["reference_name"], "ref")
         self.assertEqual(report["benchmark"]["read_count"], 6)
-        self.assertEqual(report["runs"][0]["backend"], "python")
+        run = report["runs"][0]
+        self.assertEqual(run["backend"], "python")
+        self.assertEqual(run["status"], "ok")
+        self.assertIn("wall_time_seconds", run)
+        self.assertIn("stats", run)
+        self.assertIn("peak_rss_bytes", run)  # native memory accounting present
+
+    def test_synthetic_genome_benchmark(self):
+        report = run_benchmark(
+            synthetic_genome_size=5000,
+            backends=["python"],
+            k=15,
+            read_length=100,
+            coverage=5,
+            seed=3,
+        )
+        self.assertEqual(report["benchmark"]["reference_name"], "synthetic_5000bp")
+        self.assertEqual(report["benchmark"]["reference_length"], 5000)
         self.assertEqual(report["runs"][0]["status"], "ok")
-        self.assertIn("wall_time_seconds", report["runs"][0])
-        self.assertIn("stats", report["runs"][0])
+
+    def test_benchmark_requires_exactly_one_source(self):
+        with self.assertRaises(ValueError):
+            run_benchmark(backends=["python"])  # neither reference nor size
+
+
+class GenomeGenerationTests(unittest.TestCase):
+    def test_random_genome_is_deterministic(self):
+        first = generate_random_genome(500, seed=42)
+        second = generate_random_genome(500, seed=42)
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 500)
+        self.assertTrue(set(first).issubset(set("ACGT")))
+
+    def test_random_genome_seed_changes_output(self):
+        self.assertNotEqual(generate_random_genome(500, seed=1), generate_random_genome(500, seed=2))
 
 
 class NativeBridgeTests(unittest.TestCase):

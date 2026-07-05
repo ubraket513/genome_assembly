@@ -101,3 +101,24 @@ def compact_contigs(
         raise ValueError("min_length must be >= 0")
     native = require_native()
     return native.compact_contigs(node_k, list(edge_rows), min_length)
+
+
+def minimizers(sequence: str, w: int, m: int) -> list[tuple[int, str]]:
+    """Windowed (w, m)-minimizers with the optional Rust extension."""
+
+    native = require_native()
+    return native.minimizers(sequence, w, m)
+
+
+def syncmers(sequence: str, k: int, s: int, t: int = 0) -> list[tuple[int, str]]:
+    """Open (k, s)-syncmers with the optional Rust extension."""
+
+    native = require_native()
+    return native.syncmers(sequence, k, s, t)
+
+
+def minimizer_bucket(kmer: str, m: int, num_buckets: int) -> int:
+    """Route a k-mer to a bucket by minimizer hash with the optional Rust extension."""
+
+    native = require_native()
+    return native.minimizer_bucket(kmer, m, num_buckets)
