@@ -21,6 +21,9 @@ patch releases are reserved for backward-compatible fixes.
 - `GraphSummary.tips_removed` and `GraphSummary.bubble_edges_removed` fields.
 - Continuous integration for Python tests, Rust tests, clippy, and formatting.
 - `LICENSE` (MIT) and this changelog.
+- Beginner-friendly CLI: `ga quickstart` walkthrough, examples in `--help`,
+  next-step hints after `simulate`/`assemble`, and clean one-line errors instead
+  of tracebacks on common mistakes.
 
 ### Changed
 

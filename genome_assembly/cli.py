@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+from textwrap import dedent
 from typing import Annotated
 
 import typer
@@ -17,10 +18,30 @@ from .io import FastaRecord, FastqRecord, read_fasta, read_sequences, write_fast
 from .metrics import assembly_stats
 from .simulate import simulate_reads
 
-app = typer.Typer(
-    help="Genome assembly library and CLI.",
-    no_args_is_help=True,
+_EPILOG = dedent(
+    """\
+    Examples:
+      ga simulate genome.fna reads.fastq --coverage 30
+      ga assemble reads.fastq --k 31 --outdir out
+      ga stats out/contigs.fasta --reference genome.fna
+
+    New here? Run:  ga quickstart
+    """
 )
+
+app = typer.Typer(
+    help="Genome assembly library and CLI. Turn reads into contigs in three steps.",
+    no_args_is_help=True,
+    epilog=_EPILOG,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
+
+
+def _fail(message: str) -> None:
+    """Print a clean one-line error and exit, instead of a traceback."""
+
+    typer.secho(f"Error: {message}", fg=typer.colors.RED, err=True)
+    raise typer.Exit(code=1)
 
 
 def _version_callback(value: bool) -> None:
@@ -37,6 +58,43 @@ def main(
     ] = None,
 ) -> None:
     """Genome assembly workflows."""
+
+
+@app.command()
+def quickstart() -> None:
+    """Print a copy-paste walkthrough for first-time users."""
+
+    typer.echo(
+        dedent(
+            """\
+            Genome assembly in three steps
+            ==============================
+
+            You need one input: a reads file (FASTA or FASTQ). If you only have a
+            reference genome, simulate reads from it first.
+
+            1) (optional) Simulate reads from a reference genome:
+                 ga simulate genome.fna reads.fastq --coverage 30
+
+            2) Assemble the reads into contigs:
+                 ga assemble reads.fastq --k 31 --outdir out
+               Outputs: out/contigs.fasta and out/summary.json
+
+            3) Check how good the assembly is:
+                 ga stats out/contigs.fasta --reference genome.fna
+
+            Helpful extras
+            --------------
+              --backend native      faster assembly (needs the built Rust extension)
+              --threads 4           use 4 cores (native backend only)
+              --tip-length 62       clean short error branches (~2*k is a safe value)
+              ga benchmark ...      compare backend speeds on simulated reads
+
+            Every command has its own help, for example:
+                 ga assemble --help
+            """
+        )
+    )
 
 
 @app.command()
@@ -58,6 +116,7 @@ def simulate(
     write_fastq(fastq_records, output)
     mean_coverage = sum(simulated.coverage) / len(simulated.coverage)
     typer.echo(f"Wrote {len(simulated.reads)} reads to {output} (mean coverage {mean_coverage:.2f}x)")
+    typer.secho(f"Next: ga assemble {output} --outdir assembly_out", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -92,6 +151,8 @@ def assemble(
 
     outdir.mkdir(parents=True, exist_ok=True)
     sequences = read_sequences(reads)
+    if not sequences:
+        _fail(f"No reads found in {reads}. Is it a valid FASTA/FASTQ file?")
     config = AssemblyConfig(
         k=k,
         min_abundance=min_abundance,
@@ -101,7 +162,14 @@ def assemble(
         tip_length=tip_length,
         bubble_length=bubble_length,
     )
-    result = assemble_short_reads(sequences, config)
+    try:
+        result = assemble_short_reads(sequences, config)
+    except ValueError as exc:
+        # e.g. k too large for the reads, or min-abundance too high for coverage.
+        _fail(f"{exc}")
+    except RuntimeError as exc:
+        # e.g. a compiled backend was requested but is not built; message is actionable.
+        _fail(f"{exc}")
 
     contig_records = [
         FastaRecord(
@@ -129,6 +197,7 @@ def assemble(
             f"Graph cleaning removed {graph['tips_removed']} tip edges "
             f"and {graph['bubble_edges_removed']} bubble edges"
         )
+    typer.secho(f"Next: ga stats {outdir / 'contigs.fasta'}", fg=typer.colors.GREEN)
 
 
 @app.command()

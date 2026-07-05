@@ -23,6 +23,9 @@ python -m pip install -e .
 
 ## CLI
 
+New to the tool? Run `ga quickstart` for a copy-paste walkthrough. Every command
+also prints its own `--help`, and each step suggests the next command to run.
+
 Simulate reads from the bundled SARS-CoV-2 reference:
 
 ```bash

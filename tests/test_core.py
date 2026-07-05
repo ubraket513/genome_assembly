@@ -3,7 +3,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from typer.testing import CliRunner
+
 from genome_assembly import AssemblyConfig, assemble_short_reads, n50, nx, simulate_reads
+from genome_assembly.cli import app
 from genome_assembly.benchmark import parse_backend_list, run_benchmark
 from genome_assembly.io import FastaRecord, FastqRecord, read_fasta, read_fastq, write_fasta, write_fastq
 from genome_assembly.kmers import canonical_kmer, iter_kmers, reverse_complement
@@ -116,6 +119,33 @@ class GraphCleaningTests(unittest.TestCase):
                 msg=f"{backend} cleaning diverged from python",
             )
             self.assertEqual(result.summary.tips_removed, python_result.summary.tips_removed)
+
+
+class CLITests(unittest.TestCase):
+    def setUp(self):
+        self.runner = CliRunner()
+
+    def test_quickstart_runs(self):
+        result = self.runner.invoke(app, ["quickstart"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("three steps", result.output.lower())
+
+    def test_help_shows_examples(self):
+        result = self.runner.invoke(app, ["--help"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("ga quickstart", result.output)
+
+    def test_assemble_bad_params_exit_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            reads = Path(tmp) / "reads.fastq"
+            write_fastq([FastqRecord("r1", "ACGT", "IIII")], reads)
+            result = self.runner.invoke(
+                app, ["assemble", str(reads), "-k", "31", "-o", str(Path(tmp) / "out")]
+            )
+        # k > read length yields no edges: should exit via a clean typer.Exit
+        # (SystemExit), not a leaked ValueError traceback.
+        self.assertEqual(result.exit_code, 1)
+        self.assertIsInstance(result.exception, SystemExit)
 
 
 class BenchmarkTests(unittest.TestCase):
