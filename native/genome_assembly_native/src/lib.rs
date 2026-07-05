@@ -4,6 +4,7 @@ use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+mod mdbg;
 #[path = "minimizers.rs"]
 mod sketch;
 mod union_find;
@@ -414,13 +415,21 @@ fn build_edges(
 }
 
 #[pyfunction]
-#[pyo3(signature = (node_k, edge_rows, min_length = 0))]
+#[pyo3(signature = (node_k, edge_rows, min_length = 0, threads = 1))]
 fn compact_contigs(
     node_k: usize,
     edge_rows: Vec<EdgeRow>,
     min_length: usize,
+    threads: usize,
 ) -> PyResult<Vec<ContigRow>> {
-    compact_contigs_impl(node_k, &edge_rows, min_length).map_err(PyValueError::new_err)
+    // Union-find compaction parallelizes across unitigs; the sequential walker
+    // stays the single-thread path and the correctness reference.
+    let result = if threads > 1 {
+        compact_contigs_uf_impl(node_k, &edge_rows, min_length, threads)
+    } else {
+        compact_contigs_impl(node_k, &edge_rows, min_length)
+    };
+    result.map_err(PyValueError::new_err)
 }
 
 #[pyfunction]
@@ -452,6 +461,18 @@ fn minimizer_bucket(kmer: &str, m: usize, num_buckets: usize) -> PyResult<usize>
     sketch::minimizer_bucket(&seq, m, num_buckets).map_err(PyValueError::new_err)
 }
 
+#[pyfunction]
+#[pyo3(signature = (reads, w, m, k, min_length = 0))]
+fn mdbg_assemble(
+    reads: Vec<String>,
+    w: usize,
+    m: usize,
+    k: usize,
+    min_length: usize,
+) -> PyResult<Vec<(String, f64)>> {
+    mdbg::mdbg_assemble_impl(&reads, w, m, k, min_length).map_err(PyValueError::new_err)
+}
+
 #[pymodule]
 fn genome_assembly_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(count_kmers, m)?)?;
@@ -460,6 +481,7 @@ fn genome_assembly_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(minimizers, m)?)?;
     m.add_function(wrap_pyfunction!(syncmers, m)?)?;
     m.add_function(wrap_pyfunction!(minimizer_bucket, m)?)?;
+    m.add_function(wrap_pyfunction!(mdbg_assemble, m)?)?;
     Ok(())
 }
 
@@ -606,5 +628,35 @@ mod tests {
         let reads = vec!["ACGT".to_string()];
         let error = count_kmers_impl(&reads, 3, true, 0).unwrap_err();
         assert_eq!(error, "threads must be >= 1");
+    }
+
+    #[test]
+    fn uf_compaction_matches_sequential_and_is_thread_stable() {
+        let bases = [b'A', b'C', b'G', b'T'];
+        let reads: Vec<String> = (0..40)
+            .map(|i| {
+                (0..30)
+                    .map(|j| bases[(i * 5 + j * 3) % 4] as char)
+                    .collect::<String>()
+            })
+            .collect();
+        let (_, edges) = build_edges_impl(&reads, 7, 1, true, 1).unwrap();
+        let sequential = compact_contigs_impl(7, &edges, 0).unwrap();
+        let uf_single = compact_contigs_uf_impl(7, &edges, 0, 1).unwrap();
+        let uf_multi = compact_contigs_uf_impl(7, &edges, 0, 4).unwrap();
+        assert!(!sequential.is_empty());
+        assert_eq!(sequential, uf_single);
+        assert_eq!(uf_single, uf_multi);
+    }
+
+    #[test]
+    fn uf_compacts_circular_contig() {
+        let edges = vec![
+            ("AT".to_string(), "TG".to_string(), "ATG".to_string(), 1),
+            ("TG".to_string(), "GA".to_string(), "TGA".to_string(), 1),
+            ("GA".to_string(), "AT".to_string(), "GAT".to_string(), 1),
+        ];
+        let contigs = compact_contigs_uf_impl(2, &edges, 0, 2).unwrap();
+        assert_eq!(contigs, vec![("ATGAT".to_string(), 1.0, 3)]);
     }
 }

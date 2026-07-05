@@ -92,15 +92,22 @@ def compact_contigs(
     edge_rows: Iterable[tuple[str, str, str, int]],
     *,
     min_length: int = 0,
+    threads: int = 1,
 ) -> list[tuple[str, float, int]]:
-    """Compact de Bruijn graph edges into contig rows with the optional Rust extension."""
+    """Compact de Bruijn graph edges into contig rows with the optional Rust extension.
+
+    ``threads > 1`` selects the union-find parallel compaction; ``threads == 1``
+    uses the sequential walker.
+    """
 
     if node_k < 1:
         raise ValueError("node_k must be >= 1")
     if min_length < 0:
         raise ValueError("min_length must be >= 0")
+    if threads < 1:
+        raise ValueError("threads must be >= 1")
     native = require_native()
-    return native.compact_contigs(node_k, list(edge_rows), min_length)
+    return native.compact_contigs(node_k, list(edge_rows), min_length, threads)
 
 
 def minimizers(sequence: str, w: int, m: int) -> list[tuple[int, str]]:
@@ -122,3 +129,25 @@ def minimizer_bucket(kmer: str, m: int, num_buckets: int) -> int:
 
     native = require_native()
     return native.minimizer_bucket(kmer, m, num_buckets)
+
+
+def mdbg_assemble(
+    reads: Iterable[str],
+    w: int,
+    m: int,
+    k: int,
+    *,
+    min_length: int = 0,
+) -> list[tuple[str, float]]:
+    """Assemble reads in minimizer space (mdBG) with the Rust extension.
+
+    ``w``/``m`` are the minimizer window/length; ``k`` is the number of
+    minimizers per k-min-mer. Returns ``(sequence, mean_abundance)`` rows.
+    """
+
+    if k < 2:
+        raise ValueError("k must be >= 2")
+    if min_length < 0:
+        raise ValueError("min_length must be >= 0")
+    native = require_native()
+    return native.mdbg_assemble(list(reads), w, m, k, min_length)

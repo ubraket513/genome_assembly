@@ -146,6 +146,28 @@ class SketchTests(unittest.TestCase):
             )
 
 
+class MdbgTests(unittest.TestCase):
+    def test_mdbg_contigs_are_substrings_of_genome(self):
+        if not native_available():
+            self.skipTest("native extension is not installed")
+        from genome_assembly.native import mdbg_assemble
+
+        genome = generate_random_genome(800, seed=4)
+        reads = [genome[i : i + 120] for i in range(0, len(genome) - 120, 40)]
+        contigs = mdbg_assemble(reads, 5, 8, 3, min_length=0)
+        self.assertTrue(contigs)
+        for sequence, _abundance in contigs:
+            self.assertIn(sequence, genome)  # exact reconstruction, no spliced bases
+
+    def test_mdbg_rejects_small_k(self):
+        if not native_available():
+            self.skipTest("native extension is not installed")
+        from genome_assembly.native import mdbg_assemble
+
+        with self.assertRaises(ValueError):
+            mdbg_assemble(["ACGTACGT"], 3, 4, 1)
+
+
 class GraphCleaningTests(unittest.TestCase):
     def test_tip_clipping_removes_error_branch(self):
         # Strong backbone plus a short erroneous dead-end branch off node "TAC".
@@ -316,6 +338,26 @@ class NativeBridgeTests(unittest.TestCase):
         self.assertEqual(
             [contig.sequence for contig in single.contigs],
             [contig.sequence for contig in multi.contigs],
+        )
+
+    def test_native_parallel_compaction_matches_python_multicontig(self):
+        # Union-find parallel compaction (threads>1) must match the Python oracle
+        # on a graph that splits into several contigs, not just one.
+        if not native_available():
+            self.skipTest("native extension is not installed")
+
+        reads = simulate_reads(generate_random_genome(6000, seed=9), read_length=60, coverage=8, seed=3).reads
+        python_result = assemble_short_reads(reads, AssemblyConfig(k=21, backend="python"))
+        native_result = assemble_short_reads(reads, AssemblyConfig(k=21, backend="native", threads=4))
+
+        self.assertGreater(len(python_result.contigs), 1)
+        self.assertEqual(
+            [c.sequence for c in python_result.contigs],
+            [c.sequence for c in native_result.contigs],
+        )
+        self.assertEqual(
+            [round(c.mean_abundance, 6) for c in python_result.contigs],
+            [round(c.mean_abundance, 6) for c in native_result.contigs],
         )
 
 

@@ -55,12 +55,14 @@ class DeBruijnGraph:
         raw_edge_count: int,
         min_abundance: int,
         backend: str = "python",
+        threads: int = 1,
     ) -> None:
         self.k = k
         self.edges = edges
         self.raw_edge_count = raw_edge_count
         self.min_abundance = min_abundance
         self.backend = backend
+        self.threads = threads
         # Snapshot of retained edge observations at build time. Kept separate so
         # graph cleaning does not inflate the abundance-filter count in summary().
         self._built_edge_observations = sum(edge.count for edge in edges)
@@ -123,7 +125,9 @@ class DeBruijnGraph:
                 "No graph edges remain after filtering; lower k/min_abundance or provide longer reads"
             )
 
-        return cls(config.k, edges, raw_edge_count, config.min_abundance, config.backend)
+        return cls(
+            config.k, edges, raw_edge_count, config.min_abundance, config.backend, config.threads
+        )
 
     @property
     def nodes(self) -> set[str]:
@@ -316,6 +320,7 @@ class DeBruijnGraph:
                 self.k,
                 [(edge.prefix, edge.suffix, edge.sequence, edge.count) for edge in self.edges],
                 min_length=min_length,
+                threads=self.threads,
             )
             return [
                 Contig(

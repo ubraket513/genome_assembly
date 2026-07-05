@@ -210,6 +210,44 @@ def assemble(
 
 
 @app.command()
+def mdbg(
+    reads: Annotated[Path, typer.Argument(exists=True, readable=True, help="Long/accurate reads (FASTA or FASTQ).")],
+    outdir: Annotated[Path, typer.Option("--outdir", "-o", help="Output directory.")] = Path("mdbg_out"),
+    window: Annotated[int, typer.Option("--window", "-w", min=1, help="Minimizer window (w).")] = 5,
+    minimizer_length: Annotated[int, typer.Option("--minimizer-length", "-l", min=1, help="Minimizer length (m).")] = 8,
+    kmin: Annotated[int, typer.Option("--kmin", min=2, help="Minimizers per k-min-mer (k).")] = 3,
+    min_contig_length: Annotated[int, typer.Option("--min-contig-length", min=0, help="Suppress short contigs.")] = 0,
+) -> None:
+    """Assemble long, accurate reads in minimizer space (mdBG, native only)."""
+
+    from .native import mdbg_assemble, native_available
+
+    if not native_available():
+        _fail(
+            "mdBG needs the native Rust extension. Build it with: "
+            "cd native/genome_assembly_native && maturin develop --release"
+        )
+    sequences = read_sequences(reads)
+    if not sequences:
+        _fail(f"No reads found in {reads}.")
+    try:
+        contigs = mdbg_assemble(sequences, window, minimizer_length, kmin, min_length=min_contig_length)
+    except (ValueError, RuntimeError) as exc:
+        _fail(str(exc))
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    records = [
+        FastaRecord(f"contig_{index}", sequence, f"length={len(sequence)} mean_abundance={abundance:.3f}")
+        for index, (sequence, abundance) in enumerate(contigs, start=1)
+    ]
+    write_fasta(records, outdir / "contigs.fasta")
+    total = sum(len(sequence) for sequence, _ in contigs)
+    typer.echo(f"Wrote {len(contigs)} mdBG contigs to {outdir / 'contigs.fasta'} (total {total} bp)")
+    if contigs:
+        typer.secho(f"Next: ga stats {outdir / 'contigs.fasta'}", fg=typer.colors.GREEN)
+
+
+@app.command()
 def stats(
     contigs: Annotated[Path, typer.Argument(exists=True, readable=True, help="Contigs FASTA file.")],
     reference: Annotated[

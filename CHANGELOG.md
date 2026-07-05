@@ -37,10 +37,19 @@ patch releases are reserved for backward-compatible fixes.
   REPL with a finite-state loop, rule-based intent parsing, plan confirmation,
   session memory ("run stats on that output"), and Rich summaries. Blocking
   native work is offloaded off the UI thread. Built on prompt-toolkit + Rich.
+- BCALM2-style parallel contig compaction in the Rust core: a union-find glues
+  edges into unitigs and reconstructs them in parallel. `backend="native"` with
+  `--threads > 1` now parallelizes compaction, byte-identical to the sequential
+  walker and the Python oracle.
 
 ### Changed
 
-- `--threads` now drives the native backend instead of being a reserved no-op.
+- `--threads` now drives the native backend (k-mer counting and contig
+  compaction) instead of being a reserved no-op.
+- Contig ordering is now a deterministic total order (length descending, then
+  sequence ascending) across all backends, so output no longer depends on graph
+  traversal order, algorithm, or thread count. Contig *names* (`contig_N`) may
+  differ from earlier versions when several contigs share a length.
 
 ## [0.1.0]
 
