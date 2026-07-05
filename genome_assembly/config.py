@@ -15,6 +15,8 @@ class AssemblyConfig:
     skip_ambiguous: bool = True
     backend: str = "python"
     threads: int = 1
+    tip_length: int = 0
+    bubble_length: int = 0
 
     def validate(self) -> None:
         if self.k < 1:
@@ -25,5 +27,9 @@ class AssemblyConfig:
             raise ValueError("min_contig_length must be >= 0")
         if self.threads < 1:
             raise ValueError("threads must be >= 1")
+        if self.tip_length < 0:
+            raise ValueError("tip_length must be >= 0")
+        if self.bubble_length < 0:
+            raise ValueError("bubble_length must be >= 0")
         if self.backend not in {"python", "cython", "native"}:
             raise ValueError("backend must be 'python', 'cython', or 'native'")

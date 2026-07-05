@@ -78,6 +78,14 @@ def assemble(
         typer.Option("--backend", help="Execution backend: python, cython, or native."),
     ] = "python",
     threads: Annotated[int, typer.Option("--threads", "-t", min=1, help="Worker threads for the native backend (ignored by python/cython).")] = 1,
+    tip_length: Annotated[
+        int,
+        typer.Option("--tip-length", min=0, help="Clip dead-end tips shorter than this many bp (0 disables)."),
+    ] = 0,
+    bubble_length: Annotated[
+        int,
+        typer.Option("--bubble-length", min=0, help="Pop simple bubbles up to this many bp, keeping the highest-coverage path (0 disables)."),
+    ] = 0,
     emit_gfa: Annotated[bool, typer.Option("--emit-gfa", help="Write graph.gfa alongside contigs.")] = False,
 ) -> None:
     """Assemble short reads into contigs."""
@@ -90,6 +98,8 @@ def assemble(
         min_contig_length=min_contig_length,
         backend=backend,
         threads=threads,
+        tip_length=tip_length,
+        bubble_length=bubble_length,
     )
     result = assemble_short_reads(sequences, config)
 
@@ -113,6 +123,12 @@ def assemble(
         f"Wrote {stats['contigs']} contigs to {outdir / 'contigs.fasta'} "
         f"(N50={stats['n50']}, total={stats['total_bp']} bp)"
     )
+    graph = report["graph"]
+    if graph["tips_removed"] or graph["bubble_edges_removed"]:
+        typer.echo(
+            f"Graph cleaning removed {graph['tips_removed']} tip edges "
+            f"and {graph['bubble_edges_removed']} bubble edges"
+        )
 
 
 @app.command()

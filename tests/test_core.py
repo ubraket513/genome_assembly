@@ -74,6 +74,50 @@ class SimulationAndIoTests(unittest.TestCase):
             self.assertEqual(read_fastq(fastq)[0].quality, "IIII")
 
 
+class GraphCleaningTests(unittest.TestCase):
+    def test_tip_clipping_removes_error_branch(self):
+        # Strong backbone plus a short erroneous dead-end branch off node "TAC".
+        reads = ["GATTACAGG"] * 3 + ["TTACG"]
+        dirty = assemble_short_reads(reads, AssemblyConfig(k=3))
+        self.assertGreater(len(dirty.contigs), 1)  # branch splits the backbone
+
+        cleaned = assemble_short_reads(reads, AssemblyConfig(k=3, tip_length=5))
+        self.assertEqual([c.sequence for c in cleaned.contigs], ["GATTACAGG"])
+        self.assertEqual(cleaned.summary.tips_removed, 1)
+
+    def test_tip_clipping_preserves_clean_linear_assembly(self):
+        reads = ["GATTACAGG"] * 3
+        cleaned = assemble_short_reads(reads, AssemblyConfig(k=3, tip_length=10, bubble_length=10))
+        self.assertEqual([c.sequence for c in cleaned.contigs], ["GATTACAGG"])
+        self.assertEqual(cleaned.summary.tips_removed, 0)
+        self.assertEqual(cleaned.summary.bubble_edges_removed, 0)
+
+    def test_bubble_popping_keeps_highest_coverage_path(self):
+        # Two parallel paths CAT->GAT differing by a middle substitution.
+        reads = ["CATCGAT"] * 3 + ["CATTGAT"]
+        dirty = assemble_short_reads(reads, AssemblyConfig(k=3))
+        self.assertEqual(len(dirty.contigs), 2)
+
+        cleaned = assemble_short_reads(reads, AssemblyConfig(k=3, bubble_length=8))
+        self.assertEqual([c.sequence for c in cleaned.contigs], ["CATCGAT"])
+        self.assertEqual(cleaned.summary.bubble_edges_removed, 4)
+
+    def test_cleaning_is_backend_agnostic(self):
+        reads = ["GATTACAGG"] * 3 + ["TTACG"]
+        python_result = assemble_short_reads(reads, AssemblyConfig(k=3, tip_length=5, backend="python"))
+        for backend in ("cython", "native"):
+            available = cython_available() if backend == "cython" else native_available()
+            if not available:
+                continue
+            result = assemble_short_reads(reads, AssemblyConfig(k=3, tip_length=5, backend=backend))
+            self.assertEqual(
+                [c.sequence for c in result.contigs],
+                [c.sequence for c in python_result.contigs],
+                msg=f"{backend} cleaning diverged from python",
+            )
+            self.assertEqual(result.summary.tips_removed, python_result.summary.tips_removed)
+
+
 class BenchmarkTests(unittest.TestCase):
     def test_parse_backend_list(self):
         self.assertEqual(parse_backend_list("python, cython,native"), ["python", "cython", "native"])

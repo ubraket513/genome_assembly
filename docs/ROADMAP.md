@@ -43,6 +43,8 @@ Completed:
   reads.
 - Parallel native k-mer counting honoring `--threads`, with deterministic
   per-thread map merging and Rust/Python parity tests.
+- Graph cleaning: conservative tip clipping and simple bubble popping with
+  reportable removed-edge counts, shared across all backends.
 
 Known boundaries:
 
@@ -54,8 +56,9 @@ Known boundaries:
   kernels or external C++/CUDA integrations.
 - PyPy has not been validated locally yet and should run only the pure-Python
   backend.
-- Graph cleaning, paired-end logic, minimizer partitioning, and GPU kernels are
-  not yet implemented.
+- Paired-end logic, minimizer partitioning, multi-k assembly, and GPU kernels
+  are not yet implemented. Graph cleaning covers conservative tip clipping and
+  simple bubble popping only.
 
 ## Milestones
 
@@ -171,15 +174,17 @@ Success criteria:
 
 ### M7: Assembly Quality Features
 
+Status: initial graph cleaning complete; multi-k and paired-end still open.
+
 Add graph cleaning and better short-read assembly behavior.
 
 Feature order:
 
-- Low-abundance edge filtering improvements.
-- Tip clipping.
-- Simple bubble detection.
-- Multi-k assembly exploration.
-- Paired-end design hooks.
+- Done: reportable removed-edge counts (`tips_removed`, `bubble_edges_removed`).
+- Done: tip clipping (`--tip-length`, conservative, off by default).
+- Done: simple bubble popping (`--bubble-length`, keeps highest-coverage path).
+- Open: multi-k assembly exploration.
+- Open: paired-end design hooks.
 
 ### M8: GPU Exploration
 

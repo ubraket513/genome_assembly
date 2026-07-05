@@ -37,5 +37,6 @@ def assemble_short_reads(reads: list[str], config: AssemblyConfig | None = None)
     config.validate()
 
     graph = DeBruijnGraph.from_reads(reads, config)
+    graph.clean(tip_length=config.tip_length, bubble_length=config.bubble_length)
     contigs = graph.compact_contigs(min_length=config.min_contig_length)
     return AssemblyResult(config=config, graph=graph, contigs=contigs)

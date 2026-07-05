@@ -283,19 +283,46 @@ Acceptance criteria:
 
 ## Stage 10: Graph Cleaning
 
+Status: complete.
+
 Goal: improve short-read assembly quality.
 
 Implementation tasks:
 
-- Implement tip clipping.
-- Implement simple bubble detection.
-- Improve abundance filtering with reportable removed-edge counts.
-- Add CLI flags for cleaning behavior, defaulting conservatively.
+- Done: tip clipping. `DeBruijnGraph._clip_tips` removes short dead-end branches
+  anchored at a junction, iterating to convergence. A pure linear path is never
+  a tip, so clean assemblies are preserved at any threshold.
+- Done: simple bubble popping. `DeBruijnGraph._pop_bubbles` collapses parallel
+  simple paths between the same two nodes, keeping the highest-coverage path
+  (deterministic tie-break by sequence).
+- Done: reportable removed-edge counts. `GraphSummary` gains `tips_removed` and
+  `bubble_edges_removed`; the abundance-filter count is snapshotted at build
+  time so cleaning does not inflate it.
+- Done: conservative CLI flags. `--tip-length` and `--bubble-length` both
+  default to 0 (disabled), so default assembly output is unchanged.
+
+Design notes:
+
+- Cleaning runs on the shared Python edge list inside `assemble_short_reads`,
+  after edge construction and before compaction, so python/cython/native all
+  benefit from one implementation. `test_cleaning_is_backend_agnostic` guards
+  this.
+- Tip clipping is length-thresholded only; keep the threshold small (about 2k)
+  so the longer arm of a real branch is not clipped.
+
+Validation commands:
+
+```bash
+python -m unittest discover -s tests -v
+ga assemble reads.fastq --k 31 --tip-length 62 --bubble-length 130 --outdir assembly_out
+```
 
 Acceptance criteria:
 
 - Tests show error k-mers are removed without breaking clean linear assemblies.
-- Summary reports graph-cleaning counts.
+  Covered by `GraphCleaningTests`.
+- Summary reports graph-cleaning counts. `summary.json` graph block carries
+  `tips_removed` and `bubble_edges_removed`.
 
 ## Stage 11: GPU Research Spike
 
