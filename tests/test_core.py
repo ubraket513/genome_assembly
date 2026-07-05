@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -105,16 +106,19 @@ class SketchTests(unittest.TestCase):
         result = minimizers("ACGTA", w=50, m=3)
         self.assertEqual(len(result), 1)
 
-    def test_syncmers_have_bounded_spacing(self):
-        syncs = syncmers(self.seq, k=15, s=6, t=0)
+    def test_syncmers_match_definition_and_downsample(self):
+        from genome_assembly.sketch import hash64
+
+        k, s, t = 15, 6, 0
+        syncs = syncmers(self.seq, k=k, s=s, t=t)
         self.assertTrue(syncs)
+        num_kmers = len(self.seq) - k + 1
+        self.assertLess(len(syncs), num_kmers)  # genuine downsampling
         for pos, kmer in syncs:
-            self.assertEqual(len(kmer), 15)
-            self.assertEqual(self.seq[pos : pos + 15], kmer)
-        # Open syncmers guarantee at least one seed every (k - s + 1) bases.
-        positions = [pos for pos, _ in syncs]
-        for earlier, later in zip(positions, positions[1:]):
-            self.assertLessEqual(later - earlier, 15 - 6 + 1)
+            self.assertEqual(len(kmer), k)
+            self.assertEqual(self.seq[pos : pos + k], kmer)
+            smers = [hash64(kmer[i : i + s]) for i in range(k - s + 1)]
+            self.assertEqual(smers.index(min(smers)), t)  # min s-mer sits at offset t
 
     def test_syncmer_offset_out_of_range_raises(self):
         with self.assertRaises(ValueError):
@@ -345,6 +349,75 @@ class CythonBridgeTests(unittest.TestCase):
             [contig.sequence for contig in python_result.contigs],
             [contig.sequence for contig in cython_result.contigs],
         )
+
+
+class AgentTests(unittest.TestCase):
+    def _plan(self, text, state=None):
+        from genome_assembly.agent.intents import build_plan, parse_intent
+        from genome_assembly.agent.state import SessionState
+
+        intent = parse_intent(text)
+        self.assertIsNotNone(intent, f"failed to parse: {text!r}")
+        return build_plan(intent, state or SessionState())
+
+    def test_parse_assemble_with_all_params(self):
+        plan = self._plan("assemble reads.fastq with k 21 using native on 4 threads")
+        self.assertEqual(plan.kind, "assemble")
+        self.assertEqual(str(plan.params["reads"]), "reads.fastq")
+        self.assertEqual(plan.params["k"], 21)
+        self.assertEqual(plan.params["backend"], "native")
+        self.assertEqual(plan.params["threads"], 4)
+
+    def test_stateful_stats_resolves_last_output(self):
+        from genome_assembly.agent.state import SessionState
+
+        state = SessionState(last_contigs=Path("assembly_out/contigs.fasta"))
+        plan = self._plan("now run stats on that output", state)
+        self.assertEqual(plan.kind, "stats")
+        self.assertEqual(str(plan.params["contigs"]), "assembly_out/contigs.fasta")
+
+    def test_benchmark_synthetic_genome_intent(self):
+        plan = self._plan("benchmark native on a 500000 bp genome")
+        self.assertEqual(plan.kind, "benchmark")
+        self.assertEqual(plan.params["genome_size"], 500000)
+        self.assertEqual(plan.params["backends"], ["native"])
+
+    def test_unresolved_assemble_asks_for_reads(self):
+        from genome_assembly.agent.intents import build_plan, parse_intent
+        from genome_assembly.agent.state import SessionState
+
+        plan = build_plan(parse_intent("assemble it"), SessionState())
+        self.assertIsNotNone(plan.error)
+
+    def test_unrecognized_input_returns_none(self):
+        from genome_assembly.agent.intents import parse_intent
+
+        self.assertIsNone(parse_intent("what is the meaning of life"))
+
+    def test_headless_execute_assemble_updates_state(self):
+        import asyncio
+
+        try:
+            from rich.console import Console
+        except ImportError:
+            self.skipTest("rich is not installed (agent extra)")
+
+        from genome_assembly.agent.runner import execute_plan
+        from genome_assembly.agent.state import SessionState
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reads = Path(tmp) / "reads.fastq"
+            write_fastq(
+                [FastqRecord(f"r{i}", "ACGTTGACGTAC", "I" * 12) for i in range(5)], reads
+            )
+            state = SessionState()
+            plan = self._plan(f"assemble {reads} with k 5", state)
+            console = Console(file=io.StringIO(), force_terminal=False)
+            summary = asyncio.run(execute_plan(plan, state, console))
+
+            self.assertIn("contigs", summary)
+            self.assertIsNotNone(state.last_contigs)
+            self.assertTrue(state.last_contigs.exists())
 
 
 if __name__ == "__main__":

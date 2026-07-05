@@ -140,5 +140,5 @@ def compact_contigs(Py_ssize_t node_k, object edge_rows, Py_ssize_t min_length=0
             discovery_index += 1
             contigs.append((f"contig_{discovery_index}", sequence, mean_abundance, edge_count))
 
-    contigs.sort(key=lambda item: (-len(item[1]), item[0]))
+    contigs.sort(key=lambda item: (-len(item[1]), item[1]))
     return [(sequence, mean_abundance, edge_count) for _, sequence, mean_abundance, edge_count in contigs]

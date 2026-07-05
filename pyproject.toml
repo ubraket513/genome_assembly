@@ -27,10 +27,15 @@ perf = [
 native = [
   "maturin>=1.0,<2.0",
 ]
+agent = [
+  "prompt-toolkit>=3.0",
+  "rich>=13.0",
+]
 
 [project.scripts]
 ga = "genome_assembly.cli:app"
 genome-assembly = "genome_assembly.cli:app"
+oxidas = "genome_assembly.agent.repl:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["genome_assembly"]

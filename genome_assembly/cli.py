@@ -61,6 +61,15 @@ def main(
 
 
 @app.command()
+def shell() -> None:
+    """Launch the interactive oxidas shell (agentic REPL)."""
+
+    from .agent.repl import main as run_shell
+
+    run_shell()
+
+
+@app.command()
 def quickstart() -> None:
     """Print a copy-paste walkthrough for first-time users."""
 

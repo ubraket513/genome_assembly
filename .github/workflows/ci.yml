@@ -55,8 +55,8 @@ jobs:
         with:
           python-version: "3.11"
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install with perf and native extras
-        run: python -m pip install -e '.[perf,native]'
+      - name: Install with perf, native, and agent extras
+        run: python -m pip install -e '.[perf,native,agent]'
       - name: Build Cython accelerator
         run: python setup.py build_ext --inplace
       - name: Build native extension

@@ -2,10 +2,13 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[path = "minimizers.rs"]
 mod sketch;
+mod union_find;
+
+use union_find::UnionFind;
 
 fn normalize_sequence(sequence: &str) -> Vec<u8> {
     sequence
@@ -248,13 +251,142 @@ pub fn compact_contigs_impl(
             .1
             .len()
             .cmp(&left.1.len())
-            .then_with(|| left.0.cmp(&right.0))
+            .then_with(|| left.1.cmp(&right.1))
     });
 
     Ok(contigs
         .into_iter()
         .map(|(_, sequence, mean_abundance, edge_count)| (sequence, mean_abundance, edge_count))
         .collect())
+}
+
+/// Reconstruct a single unitig (one union-find component) into a contig row.
+///
+/// The component's edges form a simple path or cycle. Paths start at the edge
+/// whose prefix node has no in-edge inside the component; cycles start at the
+/// lexicographically smallest edge so the rotation is deterministic and matches
+/// the sequential walker.
+fn reconstruct_component(component: &[usize], edge_rows: &[EdgeRow]) -> ContigRow {
+    let mut next_by_prefix: HashMap<&str, usize> = HashMap::new();
+    let mut has_incoming: HashSet<&str> = HashSet::new();
+    for &index in component {
+        next_by_prefix.insert(edge_rows[index].0.as_str(), index);
+        has_incoming.insert(edge_rows[index].1.as_str());
+    }
+
+    let start = component
+        .iter()
+        .filter(|&&index| !has_incoming.contains(edge_rows[index].0.as_str()))
+        .min_by(|&&a, &&b| edge_rows[a].2.cmp(&edge_rows[b].2))
+        .copied()
+        .unwrap_or_else(|| {
+            *component
+                .iter()
+                .min_by(|&&a, &&b| edge_rows[a].2.cmp(&edge_rows[b].2))
+                .expect("component is never empty")
+        });
+
+    let mut sequence = edge_rows[start].2.clone();
+    let mut count_sum = edge_rows[start].3;
+    let mut edge_count = 1usize;
+    let mut visited: HashSet<usize> = HashSet::new();
+    visited.insert(start);
+    let mut current = edge_rows[start].1.as_str();
+
+    while let Some(&next) = next_by_prefix.get(current) {
+        if visited.contains(&next) {
+            break;
+        }
+        visited.insert(next);
+        if let Some(last) = edge_rows[next].2.chars().last() {
+            sequence.push(last);
+        }
+        count_sum += edge_rows[next].3;
+        current = edge_rows[next].1.as_str();
+        edge_count += 1;
+    }
+
+    (sequence, count_sum as f64 / edge_count as f64, edge_count)
+}
+
+/// BCALM2-style parallel compaction: glue edges into unitigs with a union-find,
+/// then reconstruct each component in parallel. Output is identical to the
+/// sequential walker (same unitigs, same deterministic ordering).
+pub fn compact_contigs_uf_impl(
+    node_k: usize,
+    edge_rows: &[EdgeRow],
+    min_length: usize,
+    threads: usize,
+) -> Result<Vec<ContigRow>, String> {
+    if node_k == 0 {
+        return Err("node_k must be >= 1".to_string());
+    }
+    if threads == 0 {
+        return Err("threads must be >= 1".to_string());
+    }
+    if edge_rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut out_edges: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    let mut in_edges: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (index, edge) in edge_rows.iter().enumerate() {
+        out_edges.entry(edge.0.as_str()).or_default().push(index);
+        in_edges.entry(edge.1.as_str()).or_default().push(index);
+    }
+
+    let is_simple = |node: &str| -> bool {
+        in_edges.get(node).map_or(0, Vec::len) == 1 && out_edges.get(node).map_or(0, Vec::len) == 1
+    };
+
+    // Glue the single in-edge and single out-edge at every one-in-one-out node.
+    let mut uf = UnionFind::new(edge_rows.len());
+    let simple_nodes: Vec<&str> = out_edges
+        .keys()
+        .copied()
+        .filter(|node| is_simple(node))
+        .collect();
+    for node in simple_nodes {
+        uf.union(in_edges[node][0], out_edges[node][0]);
+    }
+
+    let mut components: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for index in 0..edge_rows.len() {
+        components.entry(uf.find(index)).or_default().push(index);
+    }
+    let component_lists: Vec<Vec<usize>> = components.into_values().collect();
+
+    let reconstruct_all = || -> Vec<ContigRow> {
+        component_lists
+            .par_iter()
+            .map(|component| reconstruct_component(component, edge_rows))
+            .collect()
+    };
+    let rows: Vec<ContigRow> = if threads == 1 || component_lists.len() <= 1 {
+        component_lists
+            .iter()
+            .map(|component| reconstruct_component(component, edge_rows))
+            .collect()
+    } else {
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .map_err(|err| err.to_string())?;
+        pool.install(reconstruct_all)
+    };
+
+    let mut contigs: Vec<ContigRow> = rows
+        .into_iter()
+        .filter(|(sequence, _, _)| sequence.len() >= min_length)
+        .collect();
+    contigs.sort_by(|left, right| {
+        right
+            .0
+            .len()
+            .cmp(&left.0.len())
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    Ok(contigs)
 }
 
 #[pyfunction]

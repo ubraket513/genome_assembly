@@ -21,6 +21,27 @@ assembly core:
 python -m pip install -e .
 ```
 
+## Interactive shell (oxidas)
+
+For an agentic, conversational experience, launch the `oxidas` REPL:
+
+```bash
+python -m pip install -e '.[agent]'
+oxidas            # or: ga shell
+```
+
+Type requests in plain English; each is turned into a plan you confirm before it
+runs, and the session remembers previous steps:
+
+```
+oxidas › simulate reads from genomic.fna at 30x
+oxidas › assemble those reads with k 31 using the native backend on 4 threads
+oxidas › now run stats on that output
+```
+
+Heavy native work runs off the UI thread, so the shell stays responsive with a
+live spinner and prints a clean Markdown summary when each step finishes.
+
 ## CLI
 
 New to the tool? Run `ga quickstart` for a copy-paste walkthrough. Every command

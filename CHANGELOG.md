@@ -29,6 +29,14 @@ patch releases are reserved for backward-compatible fixes.
 - `ga benchmark --genome-size N` synthesizes a deterministic random genome for
   bacterial-scale and larger tiers without downloads; the `reference` argument is
   now optional. New `generate_random_genome()` helper.
+- Minimizer and syncmer sketching (`genome_assembly.sketch`): windowed
+  minimizers, open syncmers, and minimizer bucketing, with a pure-Python oracle
+  and a Rust accelerator (native `minimizers`/`syncmers`/`minimizer_bucket`) kept
+  in parity. Foundation for minimizer-space assembly and HPC partitioning.
+- `oxidas` interactive shell (`ga shell`, optional `[agent]` extra): an async
+  REPL with a finite-state loop, rule-based intent parsing, plan confirmation,
+  session memory ("run stats on that output"), and Rich summaries. Blocking
+  native work is offloaded off the UI thread. Built on prompt-toolkit + Rich.
 
 ### Changed
 

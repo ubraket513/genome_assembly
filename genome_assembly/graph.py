@@ -386,7 +386,7 @@ class DeBruijnGraph:
                     )
                 )
 
-        contigs.sort(key=lambda contig: (-contig.length, contig.name))
+        contigs.sort(key=lambda contig: (-contig.length, contig.sequence))
         return [
             Contig(
                 name=f"contig_{index}",
